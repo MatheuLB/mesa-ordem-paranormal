@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jogador — Ordem Paranormal RPG II</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>◆</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <div class="mark"><span>Ω</span></div>
+    <div>
+      <h1>Portal do Jogador</h1>
+      <div class="sub">Ordem Paranormal RPG II</div>
+    </div>
+  </div>
+  <div class="nav-links">
+    <span id="playerNameTag" class="tag" style="display:none"></span>
+    <button class="btn small" id="btnSwitchChar" style="display:none">Trocar personagem</button>
+    <a class="btn small" href="index.html">Sair</a>
+  </div>
+</div>
+
+<div class="page">
+
+  <!-- Seleção de personagem -->
+  <div id="selectScreen">
+    <div class="title-block" style="margin-bottom:26px">
+      <div class="eyebrow">Escolha seu agente</div>
+      <h1 style="font-size:32px">Fichas prontas</h1>
+    </div>
+    <div id="charGrid" class="char-grid"></div>
+  </div>
+
+  <!-- Ficha do personagem -->
+  <div id="sheetScreen" style="display:none">
+
+    <div id="notifBanner" class="notif-banner" style="display:none">
+      <span id="notifText"></span>
+      <button class="btn-icon" id="notifClose">✕</button>
+    </div>
+
+    <div class="ornate-frame sheet-header" id="sheetHeaderTheme">
+      <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <div>
+        <h1 id="chName">—</h1>
+        <div class="sheet-tags">
+          <span class="tag" id="chProfile">—</span>
+          <span class="tag" id="chOcc">—</span>
+          <span class="tag level" id="chLevel">Nível —</span>
+        </div>
+      </div>
+      <div style="min-width:220px">
+        <div class="resource-row" style="margin-bottom:8px">
+          <span class="resource-label">PV</span>
+          <div class="resource-track" id="pvTrack"></div>
+          <span class="resource-num" id="pvNum">-/-</span>
+        </div>
+        <div class="resource-row">
+          <span class="resource-label">PD</span>
+          <div class="resource-track" id="pdTrack"></div>
+          <span class="resource-num" id="pdNum">-/-</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="ficha">Ficha</button>
+      <button class="tab-btn" data-tab="investigacao">Investigação</button>
+      <button class="tab-btn" data-tab="registro">Registro da mesa</button>
+    </div>
+
+    <!-- TAB FICHA -->
+    <div class="tab-panel active" id="tab-ficha">
+      <div class="sheet-grid">
+        <div class="stack">
+          <div class="ornate-frame panel">
+            <h2>Atributos</h2>
+            <div id="attrList"></div>
+          </div>
+          <div class="ornate-frame panel" id="abilitiesPanel">
+            <h2>Habilidades</h2>
+            <div id="abilityList"></div>
+          </div>
+        </div>
+
+        <div class="ornate-frame panel">
+          <h2>Perícias</h2>
+          <div class="skill-list" id="skillList"></div>
+        </div>
+
+        <div class="stack">
+          <div class="ornate-frame roller-box">
+            <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:12px">Teste — <span id="rollerSkillName">selecione uma perícia</span></h2>
+            <div class="row" style="margin-bottom:10px">
+              <div><label>DT</label><input type="number" id="dtInput" value="7" style="width:64px"></div>
+              <div id="bonusDiceTags" class="row" style="gap:6px"></div>
+            </div>
+            <div class="roller-dice-preview" id="dicePreview"></div>
+            <button class="btn primary" id="btnRoll" style="width:100%" disabled>Rolar dados</button>
+            <div class="roll-result" id="rollResult" style="display:none"></div>
+            <div style="margin-top:10px">
+              <button class="btn small" id="btnClearScene">Fim de cena: limpar bônus temporários</button>
+            </div>
+          </div>
+
+          <div class="ornate-frame panel">
+            <h2>Registro recente</h2>
+            <div class="roll-log" id="miniLog"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB INVESTIGAÇÃO -->
+    <div class="tab-panel" id="tab-investigacao">
+      <div id="poiList"></div>
+    </div>
+
+    <!-- TAB REGISTRO -->
+    <div class="tab-panel" id="tab-registro">
+      <div class="ornate-frame panel">
+        <h2>Histórico completo da mesa</h2>
+        <div class="roll-log" id="fullLog" style="max-height:70vh"></div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/dice.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/player.js"></script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mestre — Ordem Paranormal RPG II</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>▲</text></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="lockScreen" class="lock-screen">
+  <div class="ornate-frame lock-box">
+    <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+    <div class="glyph">▲</div>
+    <h2 style="margin-bottom:14px">Painel do Mestre</h2>
+    <p style="color:var(--text-dim);font-size:13px;margin-bottom:16px">Acesso restrito ao narrador da mesa.</p>
+    <input type="password" id="masterPass" placeholder="Palavra de acesso" style="width:100%;margin-bottom:12px">
+    <button class="btn primary" id="btnUnlock" style="width:100%">Entrar</button>
+    <div id="lockError" style="color:var(--danger);font-size:12px;margin-top:10px;display:none">Palavra incorreta.</div>
+  </div>
+</div>
+
+<div id="masterApp" style="display:none">
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark"><span>Ω</span></div>
+      <div>
+        <h1>Painel do Mestre</h1>
+        <div class="sub">Ordem Paranormal RPG II</div>
+      </div>
+    </div>
+    <div class="nav-links">
+      <a class="btn small" href="index.html">Sair</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="agentes">Agentes</button>
+      <button class="tab-btn" data-tab="cena">Cena</button>
+      <button class="tab-btn" data-tab="investigacao">Investigação</button>
+      <button class="tab-btn" data-tab="dados">Dados &amp; Regras</button>
+      <button class="tab-btn" data-tab="registro">Registro</button>
+    </div>
+
+    <!-- AGENTES -->
+    <div class="tab-panel active" id="tab-agentes">
+      <div id="masterCharList"></div>
+    </div>
+
+    <!-- CENA -->
+    <div class="tab-panel" id="tab-cena">
+      <div class="sheet-grid" style="grid-template-columns:1fr 1fr">
+        <div class="ornate-frame panel">
+          <h2>Estado da cena</h2>
+          <div class="stack">
+            <div><label>Título da cena</label><input type="text" id="sceneTitle" style="width:100%"></div>
+            <div class="row">
+              <div><label>DT padrão</label><input type="number" id="sceneDt" style="width:80px"></div>
+              <div><label>Rodada</label>
+                <div class="stepper">
+                  <button class="btn-icon" id="roundMinus">−</button>
+                  <span class="val" id="roundVal">0</span>
+                  <button class="btn-icon" id="roundPlus">+</button>
+                </div>
+              </div>
+            </div>
+            <button class="btn primary" id="btnSaveScene">Salvar estado da cena</button>
+          </div>
+        </div>
+        <div class="ornate-frame panel">
+          <h2>Notificar jogadores</h2>
+          <div class="stack">
+            <textarea id="notifInput" rows="3" style="width:100%" placeholder="Ex: Rolem iniciativa! Algo se move nas sombras..."></textarea>
+            <button class="btn primary" id="btnSendNotif">Enviar notificação</button>
+          </div>
+          <h2 style="margin-top:20px">Anotações do mestre</h2>
+          <textarea id="masterNotes" rows="8" style="width:100%" placeholder="Notas privadas da sessão..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- INVESTIGAÇÃO -->
+    <div class="tab-panel" id="tab-investigacao">
+      <div class="flex-between" style="margin-bottom:16px">
+        <h2 style="font-size:18px">Pontos de interesse</h2>
+        <button class="btn primary" id="btnNewPoi">+ Novo ponto de interesse</button>
+      </div>
+      <div id="poiEditorList"></div>
+    </div>
+
+    <!-- DADOS & REGRAS -->
+    <div class="tab-panel" id="tab-dados">
+      <div class="sheet-grid" style="grid-template-columns:1fr 1fr">
+        <div class="ornate-frame roller-box">
+          <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:12px">Rolagem livre (NPCs/criaturas)</h2>
+          <div class="row" style="margin-bottom:10px">
+            <div><label>Dado 1</label><select id="npcDie1"></select></div>
+            <div><label>Dado 2</label><select id="npcDie2"></select></div>
+            <div><label>Bônus</label><select id="npcDie3"><option value="">nenhum</option></select></div>
+            <div><label>DT</label><input type="number" id="npcDt" value="7" style="width:64px"></div>
+          </div>
+          <button class="btn primary" id="btnNpcRoll" style="width:100%">Rolar</button>
+          <div class="roller-dice-preview" id="npcDicePreview"></div>
+          <div class="roll-result" id="npcRollResult" style="display:none"></div>
+        </div>
+        <div class="ornate-frame panel">
+          <h2>Tabela de falhas críticas (1d8)</h2>
+          <div id="critFailTable" class="stack"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REGISTRO -->
+    <div class="tab-panel" id="tab-registro">
+      <div class="ornate-frame panel">
+        <h2>Histórico completo da mesa</h2>
+        <div class="roll-log" id="masterFullLog" style="max-height:70vh"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase-config.js"></script>
+<script src="js/dice.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/master.js"></script>
+</body>
+</html>
