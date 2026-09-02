@@ -13,6 +13,7 @@ function ensureModalRoot() {
 function closeModal() {
   const root = document.getElementById('uiModalRoot');
   if (root) root.innerHTML = '';
+  document.body.style.overflow = '';
 }
 
 function openModal(innerHtml) {
@@ -25,6 +26,7 @@ function openModal(innerHtml) {
       </div>
     </div>
   `;
+  document.body.style.overflow = 'hidden';
   return root;
 }
 

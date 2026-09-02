@@ -43,14 +43,24 @@
       <button class="btn-icon" id="notifClose">✕</button>
     </div>
 
+    <div id="adventureBanner" class="adventure-banner" style="display:none">
+      <span id="adventureText"></span>
+      <button class="btn primary small" id="btnContinueNew" style="display:none">Continuar com novo agente</button>
+    </div>
+
+    <div id="readonlyNote" class="readonly-note" style="display:none"></div>
+
     <div class="ornate-frame sheet-header" id="sheetHeaderTheme">
       <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
-      <div>
-        <h1 id="chName">—</h1>
-        <div class="sheet-tags">
-          <span class="tag" id="chProfile">—</span>
-          <span class="tag" id="chOcc">—</span>
-          <span class="tag level" id="chLevel">Nível —</span>
+      <div class="sheet-title-row">
+        <div class="portrait-slot" id="portraitSlot"></div>
+        <div>
+          <h1 id="chName">—</h1>
+          <div class="sheet-tags">
+            <span class="tag" id="chProfile">—</span>
+            <span class="tag" id="chOcc">—</span>
+            <span class="tag level" id="chLevel">Nível —</span>
+          </div>
         </div>
       </div>
       <div style="min-width:220px">
@@ -70,6 +80,8 @@
     <div class="tabs">
       <button class="tab-btn active" data-tab="ficha">Ficha</button>
       <button class="tab-btn" data-tab="investigacao">Investigação</button>
+      <button class="tab-btn" data-tab="inventario">Inventário</button>
+      <button class="tab-btn" data-tab="notas">Notas</button>
       <button class="tab-btn" data-tab="registro">Registro da mesa</button>
     </div>
 
@@ -120,6 +132,28 @@
       <div id="poiList"></div>
     </div>
 
+    <!-- TAB INVENTÁRIO -->
+    <div class="tab-panel" id="tab-inventario">
+      <div class="ornate-frame panel">
+        <h2>Inventário</h2>
+        <div id="invList"></div>
+        <div class="inv-add-row">
+          <input type="text" id="invNewName" placeholder="Item">
+          <input type="number" id="invNewQty" placeholder="Qtd" value="1" min="1">
+          <input type="text" id="invNewDesc" placeholder="Descrição (opcional)">
+          <button class="btn small" id="btnInvAdd">+ Adicionar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB NOTAS -->
+    <div class="tab-panel" id="tab-notas">
+      <div class="ornate-frame panel notes-box">
+        <h2>Notas do agente (privadas)</h2>
+        <textarea id="notesInput" placeholder="Suas anotações sobre a investigação..."></textarea>
+      </div>
+    </div>
+
     <!-- TAB REGISTRO -->
     <div class="tab-panel" id="tab-registro">
       <div class="ornate-frame panel">
@@ -136,6 +170,8 @@
 <script src="js/supabase-config.js"></script>
 <script src="js/dice.js"></script>
 <script src="js/ui.js"></script>
+<script src="js/portrait.js"></script>
+<script src="js/generator.js"></script>
 <script src="js/player.js"></script>
 </body>
 </html>

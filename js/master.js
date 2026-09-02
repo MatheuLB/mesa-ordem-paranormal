@@ -59,6 +59,10 @@ function init() {
   document.getElementById('roundPlus').addEventListener('click', () => bumpRound(1));
   document.getElementById('masterNotes').addEventListener('blur', saveScene);
   document.getElementById('btnNewPoi').addEventListener('click', createNewPoi);
+  document.getElementById('btnStartAdventure').addEventListener('click', () => setAdventureStatus('em_andamento'));
+  document.getElementById('btnEndAdventure').addEventListener('click', () => setAdventureStatus('finalizada'));
+  document.getElementById('btnExportDb').addEventListener('click', exportDatabase);
+  document.getElementById('btnResetSession').addEventListener('click', resetSession);
 }
 
 function switchTab(tab) {
@@ -91,18 +95,36 @@ function renderCharacters() {
   const wrap = document.getElementById('masterCharList');
   wrap.innerHTML = '';
   charactersCache.forEach(c => wrap.appendChild(renderMasterCharRow(c)));
+  updateNotifTargetOptions();
+  if (gmScreenOpenSlug) {
+    const fresh = charactersCache.find(c => c.slug === gmScreenOpenSlug);
+    if (fresh) renderGmScreenContent(fresh);
+  }
+}
+
+function updateNotifTargetOptions() {
+  const sel = document.getElementById('notifTarget');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Todos os jogadores</option>' +
+    charactersCache.map(c => `<option value="${c.slug}">${escapeHtml(c.name)}${c.claimed_by ? ' (' + escapeHtml(c.claimed_by) + ')' : ''}</option>`).join('');
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
 }
 
 function renderMasterCharRow(c) {
   const div = document.createElement('div');
-  div.className = `ornate-frame master-char-row theme-${c.theme_color}`;
+  const frameClass = c.is_generated ? 'badge-frame' : 'ornate-frame';
+  div.className = `${frameClass} master-char-row theme-${c.theme_color}`;
   div.innerHTML = `
     <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
-    <div>
-      <h3>${c.name}</h3>
-      <div class="occ">${c.profile} · ${c.occupation}${c.claimed_by ? ' · jogado por ' + escapeHtml(c.claimed_by) : ' · livre'}</div>
-      <div class="row" style="margin-top:8px">
-        <span class="tag mono">Fís d${c.fisico}</span><span class="tag mono">Men d${c.mente}</span><span class="tag mono">Emo d${c.emocao}</span>
+    <div class="row" style="align-items:flex-start;gap:12px">
+      <div class="portrait-slot">${portraitSvg(c.profile, { generated: c.is_generated, size: 44 })}</div>
+      <div>
+        ${c.is_generated ? `<div class="generated-tag">Agente gerado</div>` : ''}
+        <h3>${c.name}</h3>
+        <div class="occ">${c.profile} · ${c.occupation}${c.claimed_by ? ' · jogado por ' + escapeHtml(c.claimed_by) : ' · livre'}</div>
+        <div class="row" style="margin-top:8px">
+          <span class="tag mono">Fís d${c.fisico}</span><span class="tag mono">Men d${c.mente}</span><span class="tag mono">Emo d${c.emocao}</span>
+        </div>
       </div>
     </div>
     <div class="stack">
@@ -125,9 +147,11 @@ function renderMasterCharRow(c) {
       ${c.impeto_max ? `<div class="row"><span class="resource-label">ÍMP</span><div class="stepper"><button class="btn-icon" data-act="imp-1">−</button><span class="val">${c.impeto_used}/${c.impeto_max}</span><button class="btn-icon" data-act="imp+1">+</button></div></div>` : ''}
     </div>
     <div class="stack">
+      <button class="btn small" data-act="ver-ficha">Ver ficha</button>
       <button class="btn small" data-act="reset-full">Resetar PV/PD/Ímpeto</button>
-      <button class="btn small" data-act="reset-attr">Resetar atributos</button>
+      ${!c.is_generated ? `<button class="btn small" data-act="reset-attr">Resetar atributos</button>` : ''}
       ${c.claimed_by ? `<button class="btn small" data-act="unclaim">Liberar personagem</button>` : ''}
+      ${c.is_generated ? `<button class="btn small danger" data-act="delete-generated">Excluir agente gerado</button>` : ''}
     </div>
   `;
 
@@ -138,6 +162,14 @@ function renderMasterCharRow(c) {
 }
 
 async function handleCharAction(c, act) {
+  if (act === 'ver-ficha') { openGmScreen(c); return; }
+  if (act === 'delete-generated') {
+    const ok = await uiConfirm('Excluir agente gerado?', `"${c.name}" será removido permanentemente da mesa.`);
+    if (!ok) return;
+    await supa.from('characters').delete().eq('slug', c.slug);
+    return;
+  }
+
   const updates = {};
   if (act === 'pv-1') updates.pv_current = Math.max(0, c.pv_current - 1);
   if (act === 'pv+1') updates.pv_current = Math.min(c.pv_max, c.pv_current + 1);
@@ -146,10 +178,100 @@ async function handleCharAction(c, act) {
   if (act === 'imp-1') updates.impeto_used = Math.max(0, c.impeto_used - 1);
   if (act === 'imp+1') updates.impeto_used = Math.min(c.impeto_max, c.impeto_used + 1);
   if (act === 'reset-full') { updates.pv_current = c.pv_max; updates.pd_current = c.pd_max; updates.impeto_used = 0; updates.avaliacao_dice = 0; }
-  if (act === 'reset-attr') Object.assign(updates, BASE_ATTRS[c.slug]);
-  if (act === 'unclaim') updates.claimed_by = null;
+  if (act === 'reset-attr') Object.assign(updates, BASE_ATTRS[c.slug] || {});
+  if (act === 'unclaim') { updates.claimed_by = null; updates.claim_token = null; }
 
   await supa.from('characters').update(updates).eq('slug', c.slug);
+}
+
+// ---------------- Ficha estilo "escudo do mestre" ----------------
+
+let gmScreenOpenSlug = null;
+
+function openGmScreen(c) {
+  gmScreenOpenSlug = c.slug;
+  const root = document.createElement('div');
+  root.id = 'gmScreenRoot';
+  root.className = 'gm-screen-backdrop';
+  root.addEventListener('click', e => { if (e.target === root) closeGmScreen(); });
+  document.body.appendChild(root);
+  document.body.style.overflow = 'hidden';
+  renderGmScreenContent(c);
+}
+
+function closeGmScreen() {
+  gmScreenOpenSlug = null;
+  document.getElementById('gmScreenRoot')?.remove();
+  document.body.style.overflow = '';
+}
+
+function renderGmScreenContent(c) {
+  const root = document.getElementById('gmScreenRoot');
+  if (!root) return;
+  const inv = c.inventory || [];
+
+  root.innerHTML = `
+    <div class="${c.is_generated ? 'badge-frame' : 'ornate-frame'} gm-screen-box theme-${c.theme_color}">
+      <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <div class="flex-between" style="margin-bottom:16px">
+        <div class="row" style="gap:14px">
+          <div class="portrait-slot">${portraitSvg(c.profile, { generated: c.is_generated, size: 56 })}</div>
+          <div>
+            <h1 style="font-size:28px">${escapeHtml(c.name)}</h1>
+            <div class="sheet-tags"><span class="tag">${c.profile}</span><span class="tag">${escapeHtml(c.occupation)}</span><span class="tag level">Nível ${c.level}</span></div>
+          </div>
+        </div>
+        <button class="btn-icon" id="btnCloseGmScreen">✕</button>
+      </div>
+
+      <div class="gm-screen-grid" style="margin-bottom:18px">
+        <div><b>Físico</b> — d${c.fisico}</div>
+        <div><b>Mente</b> — d${c.mente}</div>
+        <div><b>Emoção</b> — d${c.emocao}</div>
+      </div>
+
+      <h2 style="font-size:12px">Perícias</h2>
+      <div class="gm-screen-grid" style="margin-bottom:18px">
+        ${(c.skills || []).map(s => `<div class="gm-skill-line"><span class="n">${s.name}</span><span class="v">d${s.die}+d${c[s.attr]}</span></div>`).join('')}
+      </div>
+
+      <h2 style="font-size:12px">Habilidades</h2>
+      <div class="stack" style="margin-bottom:18px">
+        ${(c.abilities || []).map(a => `<div class="ability-card"><div class="src">${escapeHtml(a.source)}</div><h4>${escapeHtml(a.title)}</h4><p>${escapeHtml(a.text)}</p></div>`).join('')}
+      </div>
+
+      <h2 style="font-size:12px">Inventário</h2>
+      <div id="gmInvList" class="stack"></div>
+      <div class="inv-add-row">
+        <input type="text" id="gmInvName" placeholder="Item">
+        <input type="number" id="gmInvQty" placeholder="Qtd" value="1" min="1">
+        <input type="text" id="gmInvDesc" placeholder="Descrição (opcional)">
+        <button class="btn small" id="gmInvAdd">+ Dar item</button>
+      </div>
+    </div>
+  `;
+
+  root.querySelector('#btnCloseGmScreen').addEventListener('click', closeGmScreen);
+
+  const invWrap = root.querySelector('#gmInvList');
+  invWrap.innerHTML = inv.length === 0
+    ? `<div class="empty-state" style="padding:10px 0">Inventário vazio.</div>`
+    : inv.map((it, i) => `<div class="inv-row"><span>${escapeHtml(it.name)}</span><span class="mono">x${it.qty ?? 1}</span><span style="color:var(--text-dim)">${escapeHtml(it.desc || '')}</span><button class="btn-icon" data-i="${i}">✕</button></div>`).join('');
+  invWrap.querySelectorAll('button[data-i]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const newInv = inv.filter((_, idx) => idx !== Number(btn.dataset.i));
+      await supa.from('characters').update({ inventory: newInv }).eq('slug', c.slug);
+    });
+  });
+
+  root.querySelector('#gmInvAdd').addEventListener('click', async () => {
+    const name = root.querySelector('#gmInvName').value.trim();
+    if (!name) return;
+    const qty = Number(root.querySelector('#gmInvQty').value) || 1;
+    const desc = root.querySelector('#gmInvDesc').value.trim();
+    const newInv = [...inv, { name, qty, desc }];
+    await supa.from('characters').update({ inventory: newInv }).eq('slug', c.slug);
+  });
 }
 
 // ---------------- Cena / estado da sessão ----------------
@@ -163,6 +285,26 @@ async function loadSceneState() {
   document.getElementById('sceneDt').value = data.scene_dt || 7;
   document.getElementById('roundVal').textContent = data.round_number || 0;
   document.getElementById('masterNotes').value = data.master_notes || '';
+  renderAdventureStatus(data.status || 'aguardando');
+
+  supa.channel('master-session')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'session_state' }, payload => {
+      sceneState = payload.new;
+      renderAdventureStatus(payload.new.status || 'aguardando');
+    })
+    .subscribe();
+}
+
+function renderAdventureStatus(status) {
+  const tag = document.getElementById('adventureStatusTag');
+  const labels = { aguardando: 'Aguardando início', em_andamento: 'Em andamento', finalizada: 'Finalizada' };
+  tag.textContent = labels[status] || status;
+  tag.className = 'tag' + (status === 'em_andamento' ? ' level' : '');
+}
+
+async function setAdventureStatus(status) {
+  await supa.from('session_state').update({ status, updated_at: new Date().toISOString() }).eq('id', 1);
+  renderAdventureStatus(status);
 }
 
 async function saveScene() {
@@ -185,8 +327,61 @@ async function bumpRound(delta) {
 async function sendNotification() {
   const text = document.getElementById('notifInput').value.trim();
   if (!text) return;
-  await supa.from('session_state').update({ notification: text, notification_at: new Date().toISOString() }).eq('id', 1);
+  const target = document.getElementById('notifTarget').value || null;
+  await supa.from('notifications').insert({ target_slug: target, text });
   document.getElementById('notifInput').value = '';
+}
+
+// ---------------- Ferramentas do banco de dados ----------------
+
+async function exportDatabase() {
+  const [chars, rolls, pois, session] = await Promise.all([
+    supa.from('characters').select('*'),
+    supa.from('roll_log').select('*').order('created_at'),
+    supa.from('investigation_points').select('*'),
+    supa.from('session_state').select('*').eq('id', 1).single(),
+  ]);
+  const dump = {
+    exported_at: new Date().toISOString(),
+    characters: chars.data, roll_log: rolls.data,
+    investigation_points: pois.data, session_state: session.data,
+  };
+  const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mesa-ordem-paranormal-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function resetSession() {
+  const ok = await uiConfirm(
+    'Limpar sessão?',
+    'Isso apaga o registro de rolagens, os pontos de interesse, as notificações e os agentes gerados aleatoriamente. As 5 fichas prontas são mantidas, mas PV/PD/Ímpeto e travas de jogador voltam ao normal. Exporte antes se quiser guardar o registro.'
+  );
+  if (!ok) return;
+
+  await Promise.all([
+    supa.from('roll_log').delete().gte('id', 0),
+    supa.from('investigation_points').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+    supa.from('notifications').delete().gte('id', 0),
+    supa.from('characters').delete().eq('is_generated', true),
+  ]);
+
+  for (const c of charactersCache.filter(c => !c.is_generated)) {
+    await supa.from('characters').update({
+      pv_current: c.pv_max, pd_current: c.pd_max, impeto_used: 0, avaliacao_dice: 0,
+      claimed_by: null, claim_token: null, inventory: [], notes: '',
+    }).eq('slug', c.slug);
+  }
+  await supa.from('session_state').update({
+    scene_title: 'Aguardando início...', scene_dt: 7, round_number: 0, status: 'aguardando',
+  }).eq('id', 1);
+
+  uiToast('Sessão limpa.', 'success');
 }
 
 // ---------------- Investigação ----------------

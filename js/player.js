@@ -6,6 +6,31 @@ let pendingBonusDice = []; // [{sides,label}]
 let selectedSkill = null;  // {name, die, attr}
 let charChannel = null;
 let sessionState = null;
+let notifChannel = null;
+let lastSeenNotifId = Number(localStorage.getItem('op2_last_notif_id') || 0);
+
+// ---------------- Trava leve de personagem (sem conta real) ----------------
+// Cada navegador que reivindica um personagem guarda um token local; só quem
+// tem o token pode agir por ele. O mestre pode liberar a qualquer momento.
+
+function getClaimTokens() {
+  try { return JSON.parse(localStorage.getItem('op2_claim_tokens') || '{}'); } catch { return {}; }
+}
+function saveClaimToken(slug, token) {
+  const t = getClaimTokens();
+  t[slug] = token;
+  localStorage.setItem('op2_claim_tokens', JSON.stringify(t));
+}
+function isOwner(c) {
+  if (!c.claimed_by) return true;
+  return getClaimTokens()[c.slug] === c.claim_token;
+}
+function newToken() { return Math.random().toString(36).slice(2) + Date.now().toString(36); }
+function requireOwner() {
+  if (isOwner(currentChar)) return true;
+  uiToast('Este personagem está travado por outro jogador — peça ao mestre para liberar.', 'error');
+  return false;
+}
 
 async function ensurePlayerName() {
   let n = localStorage.getItem('op2_player_name');
@@ -40,6 +65,12 @@ async function init() {
   document.getElementById('notifClose').addEventListener('click', () => {
     document.getElementById('notifBanner').style.display = 'none';
   });
+  document.getElementById('btnContinueNew').addEventListener('click', continueWithNewCharacter);
+  document.getElementById('btnInvAdd').addEventListener('click', addInventoryItem);
+  document.getElementById('notesInput').addEventListener('change', e => {
+    if (!isOwner(currentChar)) return;
+    updateCharField('notes', e.target.value);
+  });
 
   await loadSessionState();
   subscribeSession();
@@ -73,10 +104,13 @@ async function showSelectScreen() {
   grid.innerHTML = '';
   data.forEach(c => {
     const card = document.createElement('div');
-    card.className = `ornate-frame char-card theme-${c.theme_color}`;
+    const frameClass = c.is_generated ? 'badge-frame' : 'ornate-frame';
+    card.className = `${frameClass} char-card theme-${c.theme_color}`;
     card.innerHTML = `
       <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <div class="portrait-slot">${portraitSvg(c.profile, { generated: c.is_generated, size: 40 })}</div>
       ${c.claimed_by ? `<span class="claimed-badge">${escapeHtml(c.claimed_by)}</span>` : ''}
+      ${c.is_generated ? `<div class="generated-tag">Agente gerado</div>` : ''}
       <div class="profile-tag">${c.profile} · Nível ${c.level}</div>
       <h3>${c.name}</h3>
       <div class="occ">${c.occupation}</div>
@@ -110,8 +144,11 @@ async function selectCharacter(slug) {
 
   const name = playerName();
   if (!data.claimed_by) {
-    await supa.from('characters').update({ claimed_by: name }).eq('slug', slug);
+    const token = newToken();
+    await supa.from('characters').update({ claimed_by: name, claim_token: token }).eq('slug', slug);
     data.claimed_by = name;
+    data.claim_token = token;
+    saveClaimToken(slug, token);
   }
 
   localStorage.setItem('op2_char_slug', slug);
@@ -130,6 +167,7 @@ async function selectCharacter(slug) {
     })
     .subscribe();
 
+  subscribeNotifications();
   loadInvestigationPoints();
   loadFullLog();
   return true;
@@ -142,15 +180,30 @@ function escapeHtml(s) { const d = document.createElement('div'); d.textContent 
 function renderSheet() {
   const c = currentChar;
   const header = document.getElementById('sheetHeaderTheme');
-  header.className = `ornate-frame sheet-header theme-${c.theme_color}`;
+  const frameClass = c.is_generated ? 'badge-frame' : 'ornate-frame';
+  header.className = `${frameClass} sheet-header theme-${c.theme_color}`;
+
+  document.getElementById('portraitSlot').innerHTML = portraitSvg(c.profile, { generated: c.is_generated, size: 64 });
 
   document.getElementById('chName').textContent = c.name;
   document.getElementById('chProfile').textContent = c.profile;
   document.getElementById('chOcc').textContent = c.occupation;
   document.getElementById('chLevel').textContent = 'Nível ' + c.level;
 
+  const readOnlyNote = document.getElementById('readonlyNote');
+  if (!isOwner(c)) {
+    readOnlyNote.style.display = 'block';
+    readOnlyNote.textContent = `Ficha de ${c.claimed_by} — protegida, você só pode visualizar. Peça ao mestre para liberar o personagem se precisar assumi-lo.`;
+  } else {
+    readOnlyNote.style.display = 'none';
+  }
+
+  renderAdventureBanner();
   renderResource('pv', c.pv_current, c.pv_max);
   renderResource('pd', c.pd_current, c.pd_max);
+  renderInventory();
+  document.getElementById('notesInput').value = c.notes || '';
+  document.getElementById('notesInput').disabled = !isOwner(c);
 
   const attrList = document.getElementById('attrList');
   attrList.innerHTML = '';
@@ -180,6 +233,8 @@ function renderSheet() {
     row.querySelector('button').addEventListener('click', () => pickSkill(s));
     skillList.appendChild(row);
   });
+
+  document.getElementById('btnRoll').disabled = !selectedSkill || !isOwner(c);
 
   // Nota: NÃO chamar updateDicePreview() aqui — renderSheet() roda a cada
   // atualização (inclusive logo após doRoll gravar o resultado real dos dados
@@ -232,12 +287,12 @@ function renderProfileWidgets(container) {
       updateCharField('impeto_used', newVal);
     }));
     div.querySelector('#btnSpendImpeto1').addEventListener('click', async () => {
-      if (currentChar.impeto_used < 1) return;
+      if (!requireOwner() || currentChar.impeto_used < 1) return;
       await updateCharField('impeto_used', currentChar.impeto_used - 1);
       addBonusDie(BONUS_DIE_DEFAULT, 'Ímpeto');
     });
     div.querySelector('#btnSpendImpeto3').addEventListener('click', async () => {
-      if (currentChar.impeto_used < 3) return;
+      if (!requireOwner() || currentChar.impeto_used < 3) return;
       const attr = await uiChoice('Aumentar qual atributo em 1 passo até o fim da cena?', [
         { label: `Físico (d${currentChar.fisico} → d${stepDie(currentChar.fisico, 1)})`, value: 'fisico' },
         { label: `Mente (d${currentChar.mente} → d${stepDie(currentChar.mente, 1)})`, value: 'mente' },
@@ -265,32 +320,37 @@ function renderProfileWidgets(container) {
     `;
     container.appendChild(div);
     div.querySelector('#btnAvaliar').addEventListener('click', async () => {
+      if (!requireOwner()) return;
       await updateCharField('pd_current', Math.max(0, currentChar.pd_current - 2));
       await updateCharField('avaliacao_dice', Math.min(2, currentChar.avaliacao_dice + 1));
       logAction('gastou uma ação e 2 PD para Avaliar.');
     });
     div.querySelector('#btnUsarAval1').addEventListener('click', async () => {
+      if (!requireOwner()) return;
       await updateCharField('avaliacao_dice', currentChar.avaliacao_dice - 1);
       addBonusDie(BONUS_DIE_DEFAULT, 'Avaliação');
     });
     div.querySelector('#btnUsarAval2').addEventListener('click', async () => {
+      if (!requireOwner()) return;
       await updateCharField('avaliacao_dice', currentChar.avaliacao_dice - 2);
       addBonusDie(BONUS_DIE_DEFAULT, 'Avaliação');
       addBonusDie(BONUS_DIE_DEFAULT, 'Avaliação');
     });
   }
 
-  const focoAbility = c.abilities.find(a => a.title === 'Foco Mental' || a.title === 'Foco Emocional');
+  const focoAbility = c.abilities.find(a => a.title === 'Foco Mental' || a.title === 'Foco Emocional' || a.title === 'Foco Físico');
   if (focoAbility) {
     const div = document.createElement('div');
     div.className = 'ability-card';
+    const kind = focoAbility.title.replace('Foco ', '').toLowerCase();
     div.innerHTML = `
       <div class="src">Uso da habilidade</div>
       <h4>${focoAbility.title}</h4>
-      <button class="btn small" id="btnFoco" ${c.pd_current < 2 ? 'disabled' : ''}>Gastar 2 PD: +1d${BONUS_DIE_DEFAULT} no teste ${focoAbility.title === 'Foco Mental' ? 'mental' : 'emocional'}</button>
+      <button class="btn small" id="btnFoco" ${c.pd_current < 2 ? 'disabled' : ''}>Gastar 2 PD: +1d${BONUS_DIE_DEFAULT} no teste ${kind}</button>
     `;
     container.appendChild(div);
     div.querySelector('#btnFoco').addEventListener('click', async () => {
+      if (!requireOwner()) return;
       await updateCharField('pd_current', Math.max(0, currentChar.pd_current - 2));
       addBonusDie(BONUS_DIE_DEFAULT, focoAbility.title);
     });
@@ -303,6 +363,7 @@ function renderProfileWidgets(container) {
       <button class="btn small" id="btnPront" ${c.pd_current < 3 ? 'disabled' : ''}>Gastar 3 PD: agir antes de todos</button>`;
     container.appendChild(div);
     div.querySelector('#btnPront').addEventListener('click', async () => {
+      if (!requireOwner()) return;
       await updateCharField('pd_current', Math.max(0, currentChar.pd_current - 3));
       logAction('gastou 3 PD em Prontidão e age antes de todos nesta rodada!');
     });
@@ -310,9 +371,11 @@ function renderProfileWidgets(container) {
 }
 
 async function updateCharField(field, value) {
+  if (!isOwner(currentChar)) return false;
   currentChar[field] = value;
   renderSheet();
   await supa.from('characters').update({ [field]: value, updated_at: new Date().toISOString() }).eq('slug', currentChar.slug);
+  return true;
 }
 
 // ---------------- Dice roller ----------------
@@ -320,7 +383,7 @@ async function updateCharField(field, value) {
 function pickSkill(s) {
   selectedSkill = s;
   document.getElementById('rollerSkillName').textContent = `${s.name} (${ATTR_LABEL[s.attr]})`;
-  document.getElementById('btnRoll').disabled = false;
+  document.getElementById('btnRoll').disabled = !isOwner(currentChar);
   updateDicePreview();
 }
 
@@ -363,7 +426,7 @@ function getDiceForRoll() {
 }
 
 async function doRoll() {
-  if (!selectedSkill) return;
+  if (!selectedSkill || !requireOwner()) return;
   const dt = document.getElementById('dtInput').value === '' ? null : Number(document.getElementById('dtInput').value);
   const dice = getDiceForRoll();
   const result = performTest(dice, dt);
@@ -483,15 +546,6 @@ async function loadSessionState() {
 function applySessionState() {
   if (!sessionState) return;
   document.getElementById('dtInput').value = sessionState.scene_dt || 7;
-  if (sessionState.notification) {
-    const notifTime = sessionState.notification_at ? new Date(sessionState.notification_at).getTime() : 0;
-    const seen = Number(localStorage.getItem('op2_last_notif') || 0);
-    if (notifTime > seen) {
-      document.getElementById('notifText').textContent = sessionState.notification;
-      document.getElementById('notifBanner').style.display = 'flex';
-      localStorage.setItem('op2_last_notif', notifTime);
-    }
-  }
 }
 
 function subscribeSession() {
@@ -499,8 +553,127 @@ function subscribeSession() {
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'session_state' }, payload => {
       sessionState = payload.new;
       applySessionState();
+      renderAdventureBanner();
     })
     .subscribe();
+}
+
+// ---------------- Ciclo da aventura (início/fim controlados pelo mestre) ----------------
+
+function renderAdventureBanner() {
+  const banner = document.getElementById('adventureBanner');
+  const text = document.getElementById('adventureText');
+  const btnContinue = document.getElementById('btnContinueNew');
+  if (!sessionState || !currentChar) { banner.style.display = 'none'; return; }
+
+  const status = sessionState.status || 'aguardando';
+  if (status === 'aguardando') { banner.style.display = 'none'; return; }
+
+  banner.className = 'adventure-banner status-' + status;
+  banner.style.display = 'flex';
+  if (status === 'em_andamento') {
+    text.textContent = `Aventura em andamento${sessionState.scene_title ? ' — ' + sessionState.scene_title : ''}`;
+    btnContinue.style.display = 'none';
+  } else if (status === 'finalizada') {
+    text.textContent = 'Esta aventura foi finalizada pelo mestre.';
+    btnContinue.style.display = isOwner(currentChar) ? 'inline-block' : 'none';
+  }
+}
+
+async function continueWithNewCharacter() {
+  if (!requireOwner()) return;
+  const ok = await uiConfirm('Gerar novo agente?', `"${currentChar.name}" fica salvo na mesa, mas deixa de ser seu. Você assume um novo agente gerado aleatoriamente.`);
+  if (!ok) return;
+
+  await supa.from('characters').update({ claimed_by: null, claim_token: null }).eq('slug', currentChar.slug);
+
+  const gen = generateRandomCharacter();
+  const token = newToken();
+  gen.claimed_by = playerName();
+  gen.claim_token = token;
+
+  const { data, error } = await supa.from('characters').insert(gen).select().single();
+  if (error) { uiToast('Erro ao gerar personagem: ' + error.message, 'error'); return; }
+
+  saveClaimToken(gen.slug, token);
+  localStorage.setItem('op2_char_slug', gen.slug);
+  currentChar = data;
+  selectedSkill = null;
+  pendingBonusDice = [];
+  renderSheet();
+  switchTab('ficha');
+  uiToast(`Novo agente pronto: ${data.name} — ${data.profile} (${data.occupation})`, 'success');
+}
+
+// ---------------- Inventário ----------------
+
+function renderInventory() {
+  const wrap = document.getElementById('invList');
+  const items = currentChar.inventory || [];
+  wrap.innerHTML = items.length === 0
+    ? `<div class="empty-state" style="padding:14px 0">Nenhum item no inventário.</div>`
+    : items.map((it, i) => `
+      <div class="inv-row">
+        <span>${escapeHtml(it.name)}</span>
+        <span class="mono">x${it.qty ?? 1}</span>
+        <span style="color:var(--text-dim)">${escapeHtml(it.desc || '')}</span>
+        <button class="btn-icon" data-i="${i}" title="Remover">✕</button>
+      </div>
+    `).join('');
+  wrap.querySelectorAll('button[data-i]').forEach(btn => {
+    btn.addEventListener('click', () => removeInventoryItem(Number(btn.dataset.i)));
+  });
+  document.getElementById('btnInvAdd').disabled = !isOwner(currentChar);
+}
+
+async function addInventoryItem() {
+  if (!requireOwner()) return;
+  const nameEl = document.getElementById('invNewName');
+  const name = nameEl.value.trim();
+  if (!name) return;
+  const qty = Number(document.getElementById('invNewQty').value) || 1;
+  const desc = document.getElementById('invNewDesc').value.trim();
+  const items = [...(currentChar.inventory || []), { name, qty, desc }];
+  await updateCharField('inventory', items);
+  nameEl.value = '';
+  document.getElementById('invNewQty').value = '1';
+  document.getElementById('invNewDesc').value = '';
+}
+
+async function removeInventoryItem(i) {
+  if (!requireOwner()) return;
+  const items = (currentChar.inventory || []).filter((_, idx) => idx !== i);
+  await updateCharField('inventory', items);
+}
+
+// ---------------- Notificações privadas ----------------
+
+async function subscribeNotifications() {
+  if (notifChannel) supa.removeChannel(notifChannel);
+  const slug = currentChar.slug;
+
+  notifChannel = supa.channel('notif-' + slug)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, payload => {
+      const n = payload.new;
+      lastSeenNotifId = Math.max(lastSeenNotifId, n.id);
+      localStorage.setItem('op2_last_notif_id', String(lastSeenNotifId));
+      if (n.target_slug === null || n.target_slug === slug) {
+        document.getElementById('notifText').textContent = n.target_slug ? `[Privado] ${n.text}` : n.text;
+        document.getElementById('notifBanner').style.display = 'flex';
+      }
+    })
+    .subscribe();
+
+  const { data } = await supa.from('notifications').select('*').gt('id', lastSeenNotifId).order('id', { ascending: true });
+  if (data && data.length) {
+    lastSeenNotifId = data[data.length - 1].id;
+    localStorage.setItem('op2_last_notif_id', String(lastSeenNotifId));
+    const relevant = [...data].reverse().find(n => n.target_slug === null || n.target_slug === slug);
+    if (relevant) {
+      document.getElementById('notifText').textContent = relevant.target_slug ? `[Privado] ${relevant.text}` : relevant.text;
+      document.getElementById('notifBanner').style.display = 'flex';
+    }
+  }
 }
 
 // ---------------- Investigation points ----------------
@@ -542,6 +715,7 @@ function renderPoiCard(p) {
 }
 
 async function investigatePoi(point, skillName) {
+  if (!requireOwner()) return;
   const mySkill = (currentChar.skills || []).find(s => s.name === skillName || s.name.startsWith(skillName));
   if (!mySkill) { uiToast(`Seu personagem não tem a perícia "${skillName}" listada — role manualmente na aba Ficha.`, 'error'); return; }
 
