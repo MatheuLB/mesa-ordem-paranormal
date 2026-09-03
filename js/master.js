@@ -547,6 +547,7 @@ function renderLogEntry(r) {
   const div = document.createElement('div');
   const cls = r.passed === true || r.is_critical_success ? 'pass' : (r.passed === false || r.is_critical_fail ? 'fail' : '');
   div.className = 'roll-log-entry ' + cls;
+  div.dataset.id = r.id;
   if (r.note && !r.skill_name) {
     div.innerHTML = `<span class="who">${escapeHtml(r.character_name || '')}</span> ${escapeHtml(r.note)}`;
   } else {
@@ -572,6 +573,11 @@ function subscribeRollLog() {
       if (document.getElementById('tab-registro').classList.contains('active')) {
         document.getElementById('masterFullLog').appendChild(renderLogEntry(payload.new));
       }
+    })
+    .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'roll_log' }, payload => {
+      const id = payload.old?.id;
+      if (id === undefined) return;
+      document.querySelectorAll(`.roll-log-entry[data-id="${id}"]`).forEach(el => el.remove());
     })
     .subscribe();
 }
