@@ -8,6 +8,9 @@ let charChannel = null;
 let sessionState = null;
 let notifChannel = null;
 let lastSeenNotifId = Number(localStorage.getItem('op2_last_notif_id') || 0);
+let helpChannel = null;
+let pendingHelpSteps = 0;
+let pendingHelpSources = []; // [{id, from}]
 
 // ---------------- Trava leve de personagem (sem conta real) ----------------
 // Cada navegador que reivindica um personagem guarda um token local; só quem
@@ -66,6 +69,7 @@ async function init() {
     document.getElementById('notifBanner').style.display = 'none';
   });
   document.getElementById('btnContinueNew').addEventListener('click', continueWithNewCharacter);
+  document.getElementById('btnRequestHelp').addEventListener('click', requestHelp);
   document.getElementById('btnInvAdd').addEventListener('click', addInventoryItem);
   document.getElementById('btnRollInit').addEventListener('click', rollInitiative);
   document.getElementById('notesInput').addEventListener('change', e => {
@@ -219,6 +223,12 @@ async function selectCharacter(slug) {
   subscribeNotifications();
   loadInvestigationPoints();
   loadFullLog();
+
+  pendingHelpSteps = 0;
+  pendingHelpSources = [];
+  renderPendingHelpTag();
+  loadTeammatesForHelp();
+  subscribeHelpRequests();
   return true;
 }
 
@@ -470,7 +480,9 @@ function updateDicePreview() {
 }
 
 function getDiceForRoll() {
-  const dice = [{ sides: selectedSkill.die, label: selectedSkill.name }, { sides: currentChar[selectedSkill.attr], label: ATTR_LABEL[selectedSkill.attr] }];
+  const skillDie = pendingHelpSteps > 0 ? stepDie(selectedSkill.die, pendingHelpSteps) : selectedSkill.die;
+  const skillLabel = selectedSkill.name + (pendingHelpSteps > 0 ? ` (+${pendingHelpSteps} ajuda)` : '');
+  const dice = [{ sides: skillDie, label: skillLabel }, { sides: currentChar[selectedSkill.attr], label: ATTR_LABEL[selectedSkill.attr] }];
   return [...dice, ...pendingBonusDice].slice(0, 4);
 }
 
@@ -514,11 +526,13 @@ async function doRoll() {
     await updateCharField('impeto_used', currentChar.impeto_used + 1);
   }
 
+  const helpNote = pendingHelpSteps > 0 ? `com ajuda de ${pendingHelpSources.map(s => s.from).join(' e ')} (+${pendingHelpSteps} passo${pendingHelpSteps > 1 ? 's' : ''})` : '';
+
   await supa.from('roll_log').insert({
     character_name: currentChar.name,
     skill_name: selectedSkill.name,
     attribute_name: ATTR_LABEL[selectedSkill.attr],
-    skill_die: selectedSkill.die,
+    skill_die: dice[0].sides,
     attribute_die: currentChar[selectedSkill.attr],
     skill_result: result.rolled[0]?.value,
     attribute_result: result.rolled[1]?.value,
@@ -529,7 +543,16 @@ async function doRoll() {
     is_critical_fail: result.criticalFail,
     dt: result.dt,
     passed: result.passed,
+    note: helpNote,
   });
+
+  if (pendingHelpSteps > 0) {
+    const ids = pendingHelpSources.map(s => s.id);
+    await Promise.all(ids.map(id => supa.from('help_requests').update({ status: 'used' }).eq('id', id)));
+    pendingHelpSteps = 0;
+    pendingHelpSources = [];
+    renderPendingHelpTag();
+  }
 
   pendingBonusDice = [];
   renderBonusTags();
@@ -556,7 +579,8 @@ function renderLogEntry(r) {
   } else {
     div.innerHTML = `<span class="who">${escapeHtml(r.character_name || '')}</span> rolou <b>${escapeHtml(r.skill_name || '')}</b>
       <span class="meta">[${r.skill_result}+${r.attribute_result}=${r.total}${r.dt ? ' vs DT ' + r.dt : ''}]</span>
-      ${r.is_critical_success ? ' 🔥 crítico' : ''}${r.is_critical_fail ? ' 💀 falha crítica' : ''}`;
+      ${r.is_critical_success ? ' 🔥 crítico' : ''}${r.is_critical_fail ? ' 💀 falha crítica' : ''}
+      ${r.note ? ' — ' + escapeHtml(r.note) : ''}`;
   }
   return div;
 }
@@ -729,6 +753,115 @@ async function subscribeNotifications() {
       document.getElementById('notifBanner').style.display = 'flex';
     }
   }
+}
+
+// ---------------- Ajuda entre jogadores ----------------
+// Regra "Ajuda" (pág. 19): gasta uma ação e uma perícia coerente com d6+.
+// Se a perícia de quem ajuda for d6/d8, dá +1 passo no teste; d10/d12, +2 passos.
+
+let teammatesChannel = null;
+
+async function loadTeammatesForHelp() {
+  const { data } = await supa.from('characters').select('slug,name,claimed_by').not('claimed_by', 'is', null);
+  const sel = document.getElementById('helpTargetSelect');
+  const current = sel.value;
+  const others = (data || []).filter(c => c.slug !== currentChar.slug);
+  sel.innerHTML = others.length === 0
+    ? `<option value="">Nenhum outro jogador na mesa ainda</option>`
+    : others.map(c => `<option value="${c.slug}">${escapeHtml(c.name)} (${escapeHtml(c.claimed_by)})</option>`).join('');
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+  document.getElementById('btnRequestHelp').disabled = others.length === 0;
+
+  if (!teammatesChannel) {
+    teammatesChannel = supa.channel('teammates-feed')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'characters' }, () => loadTeammatesForHelp())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'characters' }, () => loadTeammatesForHelp())
+      .subscribe();
+  }
+}
+
+async function requestHelp() {
+  if (!requireOwner()) return;
+  const helperSlug = document.getElementById('helpTargetSelect').value;
+  if (!helperSlug) return;
+  const { data: helper } = await supa.from('characters').select('name').eq('slug', helperSlug).single();
+  if (!helper) return;
+
+  await supa.from('help_requests').insert({
+    requester_slug: currentChar.slug, requester_name: currentChar.name,
+    helper_slug: helperSlug, helper_name: helper.name,
+    context: selectedSkill ? selectedSkill.name : '',
+  });
+  uiToast(`Pedido de ajuda enviado a ${helper.name}.`, 'success');
+}
+
+function subscribeHelpRequests() {
+  if (helpChannel) supa.removeChannel(helpChannel);
+  const slug = currentChar.slug;
+  helpChannel = supa.channel('help-' + slug)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'help_requests' }, () => refreshHelpState())
+    .subscribe();
+  refreshHelpState();
+}
+
+async function refreshHelpState() {
+  const slug = currentChar.slug;
+  const { data: incoming } = await supa.from('help_requests').select('*').eq('helper_slug', slug).eq('status', 'pending').order('created_at');
+  renderHelpIncoming(incoming || []);
+
+  const { data: accepted } = await supa.from('help_requests').select('*').eq('requester_slug', slug).eq('status', 'accepted');
+  pendingHelpSteps = (accepted || []).reduce((sum, r) => sum + (r.steps || 0), 0);
+  pendingHelpSources = (accepted || []).map(r => ({ id: r.id, from: r.helper_name }));
+  renderPendingHelpTag();
+}
+
+function renderHelpIncoming(requests) {
+  const wrap = document.getElementById('helpIncoming');
+  wrap.innerHTML = requests.map(r => `
+    <div class="ability-card" data-req="${r.id}">
+      <div class="src">Pedido de ${escapeHtml(r.requester_name)}${r.context ? ' — teste de ' + escapeHtml(r.context) : ''}</div>
+      <div class="row" style="margin-top:6px">
+        <select class="help-skill-select" style="flex:1">
+          ${(currentChar.skills || []).filter(s => s.die >= 6).map(s => `<option value="${s.name}" data-die="${s.die}">${s.name} (d${s.die})</option>`).join('') || '<option value="">Nenhuma perícia d6+</option>'}
+        </select>
+        <button class="btn small primary" data-accept="${r.id}">Ajudar</button>
+        <button class="btn small danger" data-decline="${r.id}">Recusar</button>
+      </div>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('button[data-accept]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const card = btn.closest('[data-req]');
+      const sel = card.querySelector('.help-skill-select');
+      const opt = sel.selectedOptions[0];
+      if (!opt || !opt.value) { uiToast('Você não tem nenhuma perícia d6+ para ajudar.', 'error'); return; }
+      respondHelp(Number(btn.dataset.accept), true, opt.value, Number(opt.dataset.die));
+    });
+  });
+  wrap.querySelectorAll('button[data-decline]').forEach(btn => {
+    btn.addEventListener('click', () => respondHelp(Number(btn.dataset.decline), false));
+  });
+}
+
+async function respondHelp(id, accept, skillName, skillDie) {
+  if (!accept) {
+    await supa.from('help_requests').update({ status: 'declined' }).eq('id', id);
+    return;
+  }
+  const steps = skillDie >= 10 ? 2 : 1;
+  await supa.from('help_requests').update({
+    status: 'accepted', helper_skill_name: skillName, helper_skill_die: skillDie, steps,
+  }).eq('id', id);
+  await logAction(`ajudou com ${skillName} (d${skillDie}): +${steps} passo${steps > 1 ? 's' : ''} para quem pediu.`);
+  uiToast('Ajuda enviada!', 'success');
+}
+
+function renderPendingHelpTag() {
+  const wrap = document.getElementById('helpPendingTag');
+  if (pendingHelpSteps <= 0) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = `<span class="tag" style="border-color:var(--ok);color:var(--ok)">+${pendingHelpSteps} passo${pendingHelpSteps > 1 ? 's' : ''} na perícia (ajuda de ${pendingHelpSources.map(s => s.from).join(', ')})</span>`;
+  if (selectedSkill) updateDicePreview();
 }
 
 // ---------------- Investigation points ----------------

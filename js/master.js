@@ -457,6 +457,7 @@ async function resetSession() {
     supa.from('investigation_points').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
     supa.from('notifications').delete().gte('id', 0),
     supa.from('npcs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+    supa.from('help_requests').delete().gte('id', 0),
     supa.from('characters').delete().eq('is_generated', true),
   ]);
   const firstError = results.find(r => r.error);
