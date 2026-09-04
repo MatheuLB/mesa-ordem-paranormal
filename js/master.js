@@ -3,6 +3,40 @@ const MASTER_PASSWORD = 'ORDO2'; // palavra de acesso simples, apenas para não 
 
 const SKILL_NAMES = ['Acrobacia','Aptidão','Atletismo','Crime','Disciplina','Enganação','Furtividade','Intimidar','Intuição','Luta','Máquinas','Medicina','Ocultismo','Percepção','Persuasão','Pesquisar','Pontaria','Sobrevivência','Tecnologia','Vigor'];
 
+// Referência das 20 perícias do playtest (pág. 17): descrição e atributo-base.
+const SKILL_REF = [
+  { name: 'Acrobacia', attr: 'Físico', desc: 'Movimentos de ginástica e parkour, andar de skate ou patins.' },
+  { name: 'Aptidão', attr: 'Mente', desc: 'Conhecimento em um campo específico — veja as especialidades abaixo.' },
+  { name: 'Atletismo', attr: 'Físico', desc: 'Correr, saltar, escalar, nadar, remar.' },
+  { name: 'Crime', attr: 'Físico', desc: 'Furtar objetos, abrir fechaduras, falsificar documentos.' },
+  { name: 'Disciplina', attr: 'Emoção', desc: 'Estudar, meditar, resistir a traumas e sustos.' },
+  { name: 'Enganação', attr: 'Emoção', desc: 'Mentir, disfarçar-se, seduzir.' },
+  { name: 'Furtividade', attr: 'Físico', desc: 'Esconder-se, andar sem ser visto ou ouvido.' },
+  { name: 'Intimidar', attr: 'Emoção', desc: 'Assustar pessoas, coagi-las a fazerem o que você quer.' },
+  { name: 'Intuição', attr: 'Emoção', desc: '"Sexto sentido" para analisar pessoas e ambientes.' },
+  { name: 'Luta', attr: 'Físico', desc: 'Atacar desarmado ou com armas corpo a corpo.' },
+  { name: 'Máquinas', attr: 'Mente', desc: 'Operar e consertar máquinas, dirigir veículos motorizados.' },
+  { name: 'Medicina', attr: 'Mente', desc: 'Primeiros socorros, tratamentos, necropsias.' },
+  { name: 'Ocultismo', attr: 'Mente', desc: 'Conhecimento sobre o paranormal.' },
+  { name: 'Percepção', attr: 'Mente', desc: 'Notar coisas através de visão, audição e olfato; revistar lugares.' },
+  { name: 'Persuasão', attr: 'Emoção', desc: 'Convencer pessoas com argumentos e lábia.' },
+  { name: 'Pesquisar', attr: 'Mente', desc: 'Pesquisar documentos e bancos de dados, analisar evidências.' },
+  { name: 'Pontaria', attr: 'Físico', desc: 'Atacar com armas de arremesso ou de disparo.' },
+  { name: 'Sobrevivência', attr: 'Mente', desc: 'Montar acampamento, rastrear, acalmar animais ferozes.' },
+  { name: 'Tecnologia', attr: 'Mente', desc: 'Operar dispositivos tecnológicos, hackear redes.' },
+  { name: 'Vigor', attr: 'Físico', desc: 'Manter o fôlego, resistir a venenos, suportar ferimentos.' },
+];
+
+// Especialidades de Aptidão (ex: Atualidades)
+const APTIDAO_REF = [
+  { name: 'Artes', desc: 'Formas de arte, como música, dança, escrita, pintura, atuação e outras.' },
+  { name: 'Atualidades', desc: 'Assuntos gerais, como esporte, entretenimento e cultura popular.' },
+  { name: 'Burocracia', desc: 'Direito, política, economia, contabilidade e estruturas governamentais e corporativas.' },
+  { name: 'Exatas', desc: 'Ciências exatas, como matemática, física, química, biologia, astronomia e geologia.' },
+  { name: 'Humanas', desc: 'Ciências humanas, como história, geografia, filosofia, sociologia, teologia e linguística.' },
+  { name: 'Tática', desc: 'Educação militar e estratégica.' },
+];
+
 // valores-base de nível 2, usados pelo botão "resetar atributos" (desfaz bônus temporários de cena)
 const BASE_ATTRS = {
   victor: { fisico: 8, mente: 6, emocao: 8 },
@@ -52,6 +86,7 @@ function init() {
   subscribeRollLog();
   setupNpcRoller();
   renderCritFailTable();
+  renderSkillsTable();
 
   document.getElementById('btnSaveScene').addEventListener('click', saveScene);
   document.getElementById('btnSendNotif').addEventListener('click', sendNotification);
@@ -80,7 +115,8 @@ function init() {
 async function clearLog() {
   const ok = await uiConfirm('Limpar histórico?', 'Isso apaga todas as rolagens registradas na mesa. As fichas e o inventário dos agentes não são afetados.');
   if (!ok) return;
-  await supa.from('roll_log').delete().gte('id', 0);
+  const { error } = await supa.from('roll_log').delete().gte('id', 0);
+  if (error) { uiToast('Erro ao limpar histórico: ' + error.message, 'error'); return; }
   document.getElementById('masterFullLog').innerHTML = '';
   uiToast('Histórico limpo.', 'success');
 }
@@ -416,21 +452,24 @@ async function resetSession() {
   );
   if (!ok) return;
 
-  await Promise.all([
+  const results = await Promise.all([
     supa.from('roll_log').delete().gte('id', 0),
     supa.from('investigation_points').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
     supa.from('notifications').delete().gte('id', 0),
+    supa.from('npcs').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
     supa.from('characters').delete().eq('is_generated', true),
   ]);
+  const firstError = results.find(r => r.error);
+  if (firstError) { uiToast('Erro ao limpar sessão: ' + firstError.error.message, 'error'); return; }
 
   for (const c of charactersCache.filter(c => !c.is_generated)) {
     await supa.from('characters').update({
       pv_current: c.pv_max, pd_current: c.pd_max, impeto_used: 0, avaliacao_dice: 0,
-      claimed_by: null, claim_token: null, inventory: [], notes: '',
+      claimed_by: null, claim_token: null, inventory: [], notes: '', in_combat: false, initiative: 0,
     }).eq('slug', c.slug);
   }
   await supa.from('session_state').update({
-    scene_title: 'Aguardando início...', scene_dt: 7, round_number: 0, status: 'aguardando',
+    scene_title: 'Aguardando início...', scene_dt: 7, round_number: 0, status: 'aguardando', current_turn_key: null,
   }).eq('id', 1);
 
   uiToast('Sessão limpa.', 'success');
@@ -661,11 +700,13 @@ function renderCombatCards() {
     btn.addEventListener('click', () => bumpCombatPv(btn.dataset.ccPv, Number(btn.dataset.delta)));
   });
   wrap.querySelectorAll('button[data-cc-remove]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const item = list.find(i => i.key === btn.dataset.ccRemove);
       if (!item) return;
-      if (item.kind === 'npc') supa.from('npcs').delete().eq('id', item.ref.id);
-      else supa.from('characters').update({ in_combat: false }).eq('slug', item.ref.slug);
+      const { error } = item.kind === 'npc'
+        ? await supa.from('npcs').delete().eq('id', item.ref.id)
+        : await supa.from('characters').update({ in_combat: false }).eq('slug', item.ref.slug);
+      if (error) uiToast('Erro ao remover: ' + error.message, 'error');
     });
   });
 }
@@ -679,9 +720,13 @@ function renderInitiativeOrder() {
   }
 
   const currentKey = sceneState?.current_turn_key;
-  wrap.innerHTML = list.map(item => `
+  wrap.innerHTML = list.map((item, i) => `
     <div class="init-order-row ${item.key === currentKey ? 'current-turn' : ''}" draggable="true" data-key="${item.key}">
       <span class="drag-handle">⠿</span>
+      <div class="row" style="gap:2px">
+        <button class="btn-icon" data-move-up="${item.key}" title="Mover para cima" ${i === 0 ? 'disabled' : ''}>▲</button>
+        <button class="btn-icon" data-move-down="${item.key}" title="Mover para baixo" ${i === list.length - 1 ? 'disabled' : ''}>▼</button>
+      </div>
       <span class="io-init">${item.initiative}</span>
       <span class="type-tag">${item.kind === 'char' ? 'Agente' : 'NPC'}</span>
       <b style="flex:1">${escapeHtml(item.name)}</b>
@@ -697,21 +742,47 @@ function renderInitiativeOrder() {
     });
   });
 
+  const order = list.map(i => i.key);
+  const moveAndPersist = async (key, delta) => {
+    const from = order.indexOf(key);
+    const to = from + delta;
+    if (to < 0 || to >= order.length) return;
+    const newOrder = [...order];
+    newOrder.splice(from, 1);
+    newOrder.splice(to, 0, key);
+    await persistOrder(newOrder);
+  };
+  wrap.querySelectorAll('button[data-move-up]').forEach(btn => {
+    btn.addEventListener('click', () => moveAndPersist(btn.dataset.moveUp, -1));
+  });
+  wrap.querySelectorAll('button[data-move-down]').forEach(btn => {
+    btn.addEventListener('click', () => moveAndPersist(btn.dataset.moveDown, 1));
+  });
+
+  // Arrastar-para-reordenar (desktop). Os botões ▲▼ acima cobrem o mesmo
+  // resultado em qualquer dispositivo, inclusive celular (sem drag nativo).
   let dragKey = null;
   wrap.querySelectorAll('.init-order-row').forEach(row => {
-    row.addEventListener('dragstart', () => { dragKey = row.dataset.key; row.classList.add('dragging'); });
+    row.addEventListener('dragstart', e => {
+      dragKey = row.dataset.key;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', dragKey);
+      row.classList.add('dragging');
+    });
     row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragenter', e => e.preventDefault());
     row.addEventListener('dragover', e => e.preventDefault());
     row.addEventListener('drop', async e => {
       e.preventDefault();
       const dropKey = row.dataset.key;
-      if (!dragKey || dragKey === dropKey) return;
-      const order = list.map(i => i.key);
-      const from = order.indexOf(dragKey);
-      const to = order.indexOf(dropKey);
-      order.splice(from, 1);
-      order.splice(to, 0, dragKey);
-      await persistOrder(order);
+      const draggedKey = dragKey || e.dataTransfer.getData('text/plain');
+      if (!draggedKey || draggedKey === dropKey) return;
+      const newOrder = list.map(i => i.key);
+      const from = newOrder.indexOf(draggedKey);
+      const to = newOrder.indexOf(dropKey);
+      newOrder.splice(from, 1);
+      newOrder.splice(to, 0, draggedKey);
+      await persistOrder(newOrder);
     });
   });
 }
@@ -812,6 +883,24 @@ function renderCritFailTable() {
     <div class="row" style="border-bottom:1px dashed var(--border-soft);padding:6px 0">
       <span class="badge-dt">${e.roll}</span>
       <div><b>${e.name}</b><br><span style="color:var(--text-dim);font-size:12px">${e.text}</span></div>
+    </div>
+  `).join('');
+}
+
+function renderSkillsTable() {
+  document.getElementById('skillsRefTable').innerHTML = SKILL_REF.map(s => `
+    <div class="skill-ref-row">
+      <b>${s.name}</b>
+      <span class="attr-badge">${s.attr}</span>
+      <span class="desc">${s.desc}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('aptidaoRefTable').innerHTML = APTIDAO_REF.map(a => `
+    <div class="skill-ref-row">
+      <b>${a.name}</b>
+      <span class="attr-badge"></span>
+      <span class="desc">${a.desc}</span>
     </div>
   `).join('');
 }

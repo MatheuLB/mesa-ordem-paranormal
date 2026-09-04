@@ -562,3 +562,13 @@ label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; colo
   0%, 100% { background: var(--bg-panel); box-shadow: none; }
   50% { background: rgba(79, 157, 105, 0.18); box-shadow: 0 0 0 1px var(--ok); }
 }
+
+/* ---------- Tabela de perícias (referência) ---------- */
+.skills-ref { column-count: 2; column-gap: 28px; }
+@media (max-width: 820px) { .skills-ref { column-count: 1; } }
+.skill-ref-row { break-inside: avoid; display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px dashed var(--border-soft); font-size: 12.5px; }
+.skill-ref-row b { font-family: var(--font-display); font-size: 14px; min-width: 108px; flex: none; }
+.skill-ref-row .attr-badge { font-size: 9.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); flex: none; min-width: 50px; }
+.skill-ref-row .desc { color: var(--text-dim); line-height: 1.4; }
+.skills-ref-sub { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
+.skills-ref-sub h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--gold); margin-bottom: 8px; }
