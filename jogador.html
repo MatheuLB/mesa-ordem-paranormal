@@ -79,6 +79,7 @@
 
     <div class="tabs">
       <button class="tab-btn active" data-tab="ficha">Ficha</button>
+      <button class="tab-btn" data-tab="iniciativa">Iniciativa</button>
       <button class="tab-btn" data-tab="investigacao">Investigação</button>
       <button class="tab-btn" data-tab="inventario">Inventário</button>
       <button class="tab-btn" data-tab="notas">Notas</button>
@@ -124,6 +125,17 @@
             <div class="roll-log" id="miniLog"></div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- TAB INICIATIVA -->
+    <div class="tab-panel" id="tab-iniciativa">
+      <div class="ornate-frame roller-box" style="max-width:420px">
+        <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:6px">Rolar Iniciativa</h2>
+        <p style="color:var(--text-faint);font-size:12px;margin-bottom:14px">Regra provisória do playtest: Físico + Emoção (reflexo + instinto). Ao rolar, você entra automaticamente no rastreador de combate do mestre.</p>
+        <div class="roller-dice-preview" id="initDicePreview"></div>
+        <button class="btn primary" id="btnRollInit" style="width:100%">Rolar Iniciativa</button>
+        <div class="roll-result" id="initRollResult" style="display:none"></div>
       </div>
     </div>
 

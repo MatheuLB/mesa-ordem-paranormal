@@ -67,6 +67,7 @@ async function init() {
   });
   document.getElementById('btnContinueNew').addEventListener('click', continueWithNewCharacter);
   document.getElementById('btnInvAdd').addEventListener('click', addInventoryItem);
+  document.getElementById('btnRollInit').addEventListener('click', rollInitiative);
   document.getElementById('notesInput').addEventListener('change', e => {
     if (!isOwner(currentChar)) return;
     updateCharField('notes', e.target.value);
@@ -90,6 +91,51 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
   if (tab === 'investigacao') loadInvestigationPoints();
   if (tab === 'registro') loadFullLog();
+  if (tab === 'iniciativa') renderInitPreview();
+}
+
+// ---------------- Iniciativa ----------------
+
+function renderInitPreview() {
+  if (!currentChar) return;
+  const preview = document.getElementById('initDicePreview');
+  preview.innerHTML = `
+    <div class="die-face">? <span class="lbl">d${currentChar.fisico}</span></div>
+    <div class="die-face">? <span class="lbl">d${currentChar.emocao}</span></div>
+  `;
+  document.getElementById('initRollResult').style.display = 'none';
+  document.getElementById('btnRollInit').disabled = !isOwner(currentChar);
+}
+
+async function rollInitiative() {
+  if (!requireOwner()) return;
+  const dice = [{ sides: currentChar.fisico, label: 'Físico' }, { sides: currentChar.emocao, label: 'Emoção' }];
+  const result = performTest(dice, null);
+
+  const preview = document.getElementById('initDicePreview');
+  preview.innerHTML = '';
+  result.rolled.forEach(d => {
+    const el = document.createElement('div');
+    el.className = 'die-face';
+    if (d.value === result.ra) el.classList.add('high');
+    if (d.value === result.rb && result.rb !== result.ra) el.classList.add('low');
+    if (result.criticalSuccess || result.criticalFail) el.classList.add('crit');
+    el.innerHTML = `${d.value}<span class="lbl">d${d.sides}</span>`;
+    preview.appendChild(el);
+  });
+
+  const resDiv = document.getElementById('initRollResult');
+  resDiv.style.display = 'block';
+  resDiv.innerHTML = `<div class="total">${result.total}</div><div style="font-family:var(--font-mono);font-size:12px;color:var(--text-dim)">RA ${result.ra} · RB ${result.rb}</div>`;
+
+  await updateCharField('initiative', result.total);
+  await updateCharField('in_combat', true);
+  await supa.from('roll_log').insert({
+    character_name: currentChar.name, skill_name: 'Iniciativa', attribute_name: 'Físico + Emoção',
+    skill_result: result.rolled[0]?.value, attribute_result: result.rolled[1]?.value, total: result.total,
+    rolagem_alta: result.ra, rolagem_baixa: result.rb,
+    is_critical_success: result.criticalSuccess, is_critical_fail: result.criticalFail,
+  });
 }
 
 async function showSelectScreen() {
@@ -141,6 +187,9 @@ async function selectCharacter(slug) {
   document.getElementById('rollResult').style.display = 'none';
   document.getElementById('dicePreview').innerHTML = '';
   document.getElementById('bonusDiceTags').innerHTML = '';
+  document.getElementById('initRollResult').style.display = 'none';
+  document.getElementById('initDicePreview').innerHTML = '';
+  switchTab('ficha');
 
   const name = playerName();
   if (!data.claimed_by) {

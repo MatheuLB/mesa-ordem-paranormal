@@ -103,30 +103,51 @@
     <!-- COMBATE -->
     <div class="tab-panel" id="tab-combate">
       <div class="flex-between" style="margin-bottom:16px">
+        <h1 style="font-size:22px">⚔ Modo Combate</h1>
         <div class="row">
-          <button class="btn small" id="btnPrevTurn">◀ Turno anterior</button>
-          <button class="btn primary small" id="btnNextTurn">Próximo turno ▶</button>
-        </div>
-        <button class="btn small danger" id="btnEndCombat">Encerrar combate</button>
-      </div>
-
-      <div class="ornate-frame panel" style="margin-bottom:16px">
-        <h2>Agentes na luta</h2>
-        <div id="combatCharToggles" class="row"></div>
-      </div>
-
-      <div class="ornate-frame panel" style="margin-bottom:16px">
-        <h2>Novo NPC / Monstro</h2>
-        <div class="row" style="align-items:flex-end">
-          <div><label>Nome</label><input type="text" id="npcName" placeholder="Ex: Zumbi de Sangue"></div>
-          <div><label>PV</label><input type="number" id="npcPv" value="10" style="width:70px"></div>
-          <div><label>Iniciativa</label><input type="number" id="npcInit" value="0" style="width:70px"></div>
-          <div class="grow"><label>Notas</label><input type="text" id="npcNotes" placeholder="Ataques, comportamento..." style="width:100%"></div>
-          <button class="btn primary small" id="btnAddNpc">+ Adicionar</button>
+          <span class="resource-label">RODADA</span>
+          <div class="stepper">
+            <button class="btn-icon" id="roundMinus2">−</button>
+            <span class="val" id="roundVal2">0</span>
+            <button class="btn-icon" id="roundPlus2">+</button>
+          </div>
+          <button class="btn small danger" id="btnEndCombat">Encerrar combate</button>
         </div>
       </div>
 
-      <div id="combatTracker"></div>
+      <div class="ornate-frame panel" style="margin-bottom:16px">
+        <div class="flex-between">
+          <h2 style="margin:0">Combatentes</h2>
+          <div id="combatCharToggles" class="row"></div>
+        </div>
+        <div id="combatCards" class="char-grid" style="margin-top:14px"></div>
+      </div>
+
+      <div class="ornate-frame panel" style="margin-bottom:16px">
+        <div class="flex-between" style="margin-bottom:6px">
+          <h2 style="margin:0">🎯 Ordem de Iniciativa</h2>
+          <div class="row">
+            <button class="btn primary small" id="btnRollAllInit">🎲 Rolar Iniciativa</button>
+            <button class="btn small" id="btnPrevTurn">◀ Anterior</button>
+            <button class="btn primary small" id="btnNextTurn">Próximo turno ▶</button>
+            <button class="btn small" id="btnResetInit">Reset</button>
+          </div>
+        </div>
+        <p style="color:var(--text-faint);font-size:12px;margin-bottom:12px">Arraste para reordenar manualmente. O combatente da vez pisca em destaque.</p>
+        <div id="initiativeOrder"></div>
+      </div>
+
+      <div class="ornate-frame panel">
+        <h2>Criar Monstro / NPC</h2>
+        <div class="sheet-grid" style="grid-template-columns:1fr 1fr">
+          <div><label>Nome</label><input type="text" id="npcName" placeholder="Ex: Zumbi de Sangue" style="width:100%"></div>
+          <div><label>PV máximo</label><input type="number" id="npcPv" value="10" style="width:100%"></div>
+          <div><label>Dado de iniciativa</label><select id="npcInitDie" style="width:100%"></select></div>
+          <div><label>Iniciativa inicial (opcional)</label><input type="number" id="npcInit" value="0" style="width:100%"></div>
+        </div>
+        <div style="margin-top:10px"><label>Habilidades / Notas</label><textarea id="npcNotes" rows="2" style="width:100%" placeholder="Ex: Ataque com Luta d10 | Especial: regenera 1d4 PV por rodada"></textarea></div>
+        <button class="btn primary" id="btnAddNpc" style="margin-top:10px">+ Adicionar à luta</button>
+      </div>
     </div>
 
     <!-- DADOS & REGRAS -->

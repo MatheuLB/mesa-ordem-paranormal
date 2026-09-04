@@ -65,9 +65,14 @@ function init() {
   document.getElementById('btnResetSession').addEventListener('click', resetSession);
   document.getElementById('btnClearLog').addEventListener('click', clearLog);
   document.getElementById('btnAddNpc').addEventListener('click', createNpc);
+  document.getElementById('npcInitDie').innerHTML = [4, 6, 8, 10, 12].map(d => `<option value="${d}" ${d === 8 ? 'selected' : ''}>d${d}</option>`).join('');
   document.getElementById('btnPrevTurn').addEventListener('click', () => stepTurn(-1));
   document.getElementById('btnNextTurn').addEventListener('click', () => stepTurn(1));
   document.getElementById('btnEndCombat').addEventListener('click', endCombat);
+  document.getElementById('btnRollAllInit').addEventListener('click', rollAllInitiative);
+  document.getElementById('btnResetInit').addEventListener('click', resetInitiativeOrder);
+  document.getElementById('roundMinus2').addEventListener('click', () => bumpRound(-1));
+  document.getElementById('roundPlus2').addEventListener('click', () => bumpRound(1));
   loadNpcs();
   subscribeNpcs();
 }
@@ -328,6 +333,7 @@ async function loadSceneState() {
   document.getElementById('sceneTitle').value = data.scene_title || '';
   document.getElementById('sceneDt').value = data.scene_dt || 7;
   document.getElementById('roundVal').textContent = data.round_number || 0;
+  document.getElementById('roundVal2').textContent = data.round_number || 0;
   document.getElementById('masterNotes').value = data.master_notes || '';
   renderAdventureStatus(data.status || 'aguardando');
 
@@ -366,6 +372,7 @@ async function bumpRound(delta) {
   const el = document.getElementById('roundVal');
   const val = Math.max(0, Number(el.textContent) + delta);
   el.textContent = val;
+  document.getElementById('roundVal2').textContent = val;
   await supa.from('session_state').update({ round_number: val }).eq('id', 1);
 }
 
@@ -556,14 +563,34 @@ async function createNpc() {
   if (!name) { uiToast('Dê um nome ao NPC/monstro.', 'error'); return; }
   const pv = Math.max(1, Number(document.getElementById('npcPv').value) || 10);
   const initiative = Number(document.getElementById('npcInit').value) || 0;
+  const init_die = Number(document.getElementById('npcInitDie').value) || 8;
   const notes = document.getElementById('npcNotes').value.trim();
 
-  await supa.from('npcs').insert({ name, pv_max: pv, pv_current: pv, initiative, notes, in_combat: true });
+  await supa.from('npcs').insert({ name, pv_max: pv, pv_current: pv, initiative, init_die, notes, in_combat: true });
 
   document.getElementById('npcName').value = '';
   document.getElementById('npcPv').value = '10';
   document.getElementById('npcInit').value = '0';
   document.getElementById('npcNotes').value = '';
+}
+
+async function rollCombatInitiative(item) {
+  const dice = item.kind === 'char'
+    ? [{ sides: item.ref.fisico, label: 'Físico' }, { sides: item.ref.emocao, label: 'Emoção' }]
+    : [{ sides: item.ref.init_die, label: 'Iniciativa' }];
+  const result = performTest(dice, null);
+
+  if (item.kind === 'char') await supa.from('characters').update({ initiative: result.total }).eq('slug', item.ref.slug);
+  else await supa.from('npcs').update({ initiative: result.total }).eq('id', item.ref.id);
+
+  await supa.from('roll_log').insert({
+    character_name: item.name, skill_name: 'Iniciativa',
+    attribute_name: item.kind === 'char' ? 'Físico + Emoção' : `d${item.ref.init_die}`,
+    skill_result: result.rolled[0]?.value, attribute_result: result.rolled[1]?.value ?? null,
+    total: result.total, rolagem_alta: result.ra, rolagem_baixa: result.rb,
+    is_critical_success: result.criticalSuccess, is_critical_fail: result.criticalFail,
+    note: '(rolado pelo mestre)',
+  });
 }
 
 function renderCombatCharToggles() {
@@ -594,56 +621,109 @@ function combatCombatants() {
 }
 
 function renderCombatTracker() {
-  const wrap = document.getElementById('combatTracker');
-  if (!wrap) return;
+  if (!document.getElementById('combatCards')) return;
   renderCombatCharToggles();
+  renderCombatCards();
+  renderInitiativeOrder();
+  document.getElementById('roundVal2').textContent = sceneState?.round_number ?? 0;
+}
 
+function renderCombatCards() {
+  const wrap = document.getElementById('combatCards');
   const list = combatCombatants();
   if (list.length === 0) {
-    wrap.innerHTML = `<div class="empty-state">Nenhum combatente na luta. Marque agentes acima ou adicione um NPC/monstro.</div>`;
+    wrap.innerHTML = `<div class="empty-state">Nenhum combatente na luta. Marque agentes acima ou crie um NPC/monstro abaixo.</div>`;
+    return;
+  }
+  wrap.innerHTML = list.map(item => {
+    const pct = Math.max(0, Math.min(100, (item.pv_current / item.pv_max) * 100));
+    return `
+    <div class="ornate-frame combat-card theme-${item.theme}">
+      <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+      <div class="cc-head">
+        <div>
+          <div class="cc-sub">${item.kind === 'char' ? escapeHtml(item.ref.profile) : 'NPC / Monstro'}</div>
+          <h4>${escapeHtml(item.name)}</h4>
+        </div>
+        <button class="btn-icon" data-cc-remove="${item.key}" title="Remover da luta">✕</button>
+      </div>
+      <div class="row" style="justify-content:space-between;font-size:12px"><span>PV</span><span class="mono">${item.pv_current}/${item.pv_max}</span></div>
+      <div class="hp-bar-track"><div class="hp-bar-fill ${pct <= 33 ? 'low' : ''}" style="width:${pct}%"></div></div>
+      ${item.notes ? `<div class="notes-cell">${escapeHtml(item.notes)}</div>` : ''}
+      <div class="cc-actions">
+        <button class="btn small danger" data-cc-pv="${item.key}" data-delta="-1">−PV</button>
+        <button class="btn small" data-cc-pv="${item.key}" data-delta="1" style="border-color:var(--ok);color:var(--ok)">+PV</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  wrap.querySelectorAll('button[data-cc-pv]').forEach(btn => {
+    btn.addEventListener('click', () => bumpCombatPv(btn.dataset.ccPv, Number(btn.dataset.delta)));
+  });
+  wrap.querySelectorAll('button[data-cc-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = list.find(i => i.key === btn.dataset.ccRemove);
+      if (!item) return;
+      if (item.kind === 'npc') supa.from('npcs').delete().eq('id', item.ref.id);
+      else supa.from('characters').update({ in_combat: false }).eq('slug', item.ref.slug);
+    });
+  });
+}
+
+function renderInitiativeOrder() {
+  const wrap = document.getElementById('initiativeOrder');
+  const list = combatCombatants();
+  if (list.length === 0) {
+    wrap.innerHTML = `<div class="empty-state">Clique em "Rolar Iniciativa" para começar o combate.</div>`;
     return;
   }
 
   const currentKey = sceneState?.current_turn_key;
   wrap.innerHTML = list.map(item => `
-    <div class="combat-row theme-${item.theme} ${item.key === currentKey ? 'current-turn' : ''}">
-      <input type="number" class="init-input" value="${item.initiative}" data-init-key="${item.key}" title="Iniciativa">
-      <div class="name-cell">
-        <div class="type-tag">${item.kind === 'char' ? 'Agente' : 'NPC/Monstro'}</div>
-        <h4>${escapeHtml(item.name)}</h4>
-      </div>
-      <div class="row">
-        <span class="resource-label">PV</span>
-        <div class="stepper">
-          <button class="btn-icon" data-pv-key="${item.key}" data-delta="-1">−</button>
-          <span class="val">${item.pv_current}/${item.pv_max}</span>
-          <button class="btn-icon" data-pv-key="${item.key}" data-delta="1">+</button>
-        </div>
-      </div>
-      <div class="notes-cell">${escapeHtml(item.notes)}</div>
-      ${item.kind === 'npc'
-        ? `<button class="btn-icon" data-del-npc="${item.ref.id}" title="Remover">✕</button>`
-        : `<button class="btn-icon" data-remove-char="${item.ref.slug}" title="Tirar da luta">✕</button>`}
+    <div class="init-order-row ${item.key === currentKey ? 'current-turn' : ''}" draggable="true" data-key="${item.key}">
+      <span class="drag-handle">⠿</span>
+      <span class="io-init">${item.initiative}</span>
+      <span class="type-tag">${item.kind === 'char' ? 'Agente' : 'NPC'}</span>
+      <b style="flex:1">${escapeHtml(item.name)}</b>
+      <span class="mono" style="font-size:12px;color:var(--text-dim)">PV ${item.pv_current}/${item.pv_max}</span>
+      <button class="btn-icon" data-roll-init="${item.key}" title="Rolar iniciativa">🎲</button>
     </div>
   `).join('');
 
-  wrap.querySelectorAll('input[data-init-key]').forEach(inp => {
-    inp.addEventListener('change', () => setInitiative(inp.dataset.initKey, Number(inp.value) || 0));
+  wrap.querySelectorAll('button[data-roll-init]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = list.find(i => i.key === btn.dataset.rollInit);
+      if (item) rollCombatInitiative(item);
+    });
   });
-  wrap.querySelectorAll('button[data-pv-key]').forEach(btn => {
-    btn.addEventListener('click', () => bumpCombatPv(btn.dataset.pvKey, Number(btn.dataset.delta)));
-  });
-  wrap.querySelectorAll('button[data-del-npc]').forEach(btn => {
-    btn.addEventListener('click', () => supa.from('npcs').delete().eq('id', btn.dataset.delNpc));
-  });
-  wrap.querySelectorAll('button[data-remove-char]').forEach(btn => {
-    btn.addEventListener('click', () => supa.from('characters').update({ in_combat: false }).eq('slug', btn.dataset.removeChar));
+
+  let dragKey = null;
+  wrap.querySelectorAll('.init-order-row').forEach(row => {
+    row.addEventListener('dragstart', () => { dragKey = row.dataset.key; row.classList.add('dragging'); });
+    row.addEventListener('dragend', () => row.classList.remove('dragging'));
+    row.addEventListener('dragover', e => e.preventDefault());
+    row.addEventListener('drop', async e => {
+      e.preventDefault();
+      const dropKey = row.dataset.key;
+      if (!dragKey || dragKey === dropKey) return;
+      const order = list.map(i => i.key);
+      const from = order.indexOf(dragKey);
+      const to = order.indexOf(dropKey);
+      order.splice(from, 1);
+      order.splice(to, 0, dragKey);
+      await persistOrder(order);
+    });
   });
 }
 
-async function setInitiative(key, value) {
-  if (key.startsWith('char:')) await supa.from('characters').update({ initiative: value }).eq('slug', key.slice(5));
-  else await supa.from('npcs').update({ initiative: value }).eq('id', key.slice(4));
+async function persistOrder(orderKeys) {
+  const n = orderKeys.length;
+  await Promise.all(orderKeys.map((key, idx) => {
+    const value = n - idx;
+    return key.startsWith('char:')
+      ? supa.from('characters').update({ initiative: value }).eq('slug', key.slice(5))
+      : supa.from('npcs').update({ initiative: value }).eq('id', key.slice(4));
+  }));
 }
 
 async function bumpCombatPv(key, delta) {
@@ -652,6 +732,17 @@ async function bumpCombatPv(key, delta) {
   const newVal = Math.max(0, Math.min(item.pv_max, item.pv_current + delta));
   if (key.startsWith('char:')) await supa.from('characters').update({ pv_current: newVal }).eq('slug', item.ref.slug);
   else await supa.from('npcs').update({ pv_current: newVal }).eq('id', item.ref.id);
+}
+
+async function rollAllInitiative() {
+  const list = combatCombatants();
+  if (list.length === 0) { uiToast('Nenhum combatente para rolar iniciativa.', 'error'); return; }
+  for (const item of list) await rollCombatInitiative(item);
+  uiToast('Iniciativa rolada para todos!', 'success');
+}
+
+async function resetInitiativeOrder() {
+  await supa.from('session_state').update({ current_turn_key: null, round_number: 0 }).eq('id', 1);
 }
 
 async function stepTurn(delta) {
