@@ -8,6 +8,16 @@ const PROFILE_ICON = {
   Executor: '<path d="M7 13v-2a5 5 0 0 1 10 0v2h1.2a.8.8 0 0 1 .8.8v3.4a2.8 2.8 0 0 1-2.8 2.8H8a2.8 2.8 0 0 1-2.8-2.8v-3.4a.8.8 0 0 1 .8-.8H7Zm2-2v2h6v-2a3 3 0 0 0-6 0Z"/>',
 };
 
+// Retrato de um personagem: foto enviada pelo mestre (avatar_url) se houver,
+// senão cai no ícone placeholder por perfil.
+function renderAvatar(c, { size = 64 } = {}) {
+  if (c.avatar_url) {
+    const shape = c.is_generated ? 'avatar-shield' : 'avatar-circle';
+    return `<img src="${c.avatar_url}" alt="" class="portrait-svg ${shape}" style="width:${size}px;height:${size}px;object-fit:cover">`;
+  }
+  return portraitSvg(c.profile, { generated: c.is_generated, size });
+}
+
 function portraitSvg(profile, { generated = false, size = 64 } = {}) {
   const icon = PROFILE_ICON[profile] || PROFILE_ICON.Vigilante;
   if (generated) {

@@ -40,6 +40,7 @@
       <button class="tab-btn active" data-tab="agentes">Agentes</button>
       <button class="tab-btn" data-tab="cena">Cena</button>
       <button class="tab-btn" data-tab="investigacao">Investigação</button>
+      <button class="tab-btn" data-tab="combate">Combate</button>
       <button class="tab-btn" data-tab="dados">Dados &amp; Regras</button>
       <button class="tab-btn" data-tab="registro">Registro</button>
     </div>
@@ -99,6 +100,35 @@
       <div id="poiEditorList"></div>
     </div>
 
+    <!-- COMBATE -->
+    <div class="tab-panel" id="tab-combate">
+      <div class="flex-between" style="margin-bottom:16px">
+        <div class="row">
+          <button class="btn small" id="btnPrevTurn">◀ Turno anterior</button>
+          <button class="btn primary small" id="btnNextTurn">Próximo turno ▶</button>
+        </div>
+        <button class="btn small danger" id="btnEndCombat">Encerrar combate</button>
+      </div>
+
+      <div class="ornate-frame panel" style="margin-bottom:16px">
+        <h2>Agentes na luta</h2>
+        <div id="combatCharToggles" class="row"></div>
+      </div>
+
+      <div class="ornate-frame panel" style="margin-bottom:16px">
+        <h2>Novo NPC / Monstro</h2>
+        <div class="row" style="align-items:flex-end">
+          <div><label>Nome</label><input type="text" id="npcName" placeholder="Ex: Zumbi de Sangue"></div>
+          <div><label>PV</label><input type="number" id="npcPv" value="10" style="width:70px"></div>
+          <div><label>Iniciativa</label><input type="number" id="npcInit" value="0" style="width:70px"></div>
+          <div class="grow"><label>Notas</label><input type="text" id="npcNotes" placeholder="Ataques, comportamento..." style="width:100%"></div>
+          <button class="btn primary small" id="btnAddNpc">+ Adicionar</button>
+        </div>
+      </div>
+
+      <div id="combatTracker"></div>
+    </div>
+
     <!-- DADOS & REGRAS -->
     <div class="tab-panel" id="tab-dados">
       <div class="two-col-grid">
@@ -133,7 +163,10 @@
     <!-- REGISTRO -->
     <div class="tab-panel" id="tab-registro">
       <div class="ornate-frame panel">
-        <h2>Histórico completo da mesa</h2>
+        <div class="flex-between" style="margin-bottom:14px">
+          <h2 style="margin:0">Histórico completo da mesa</h2>
+          <button class="btn small danger" id="btnClearLog">Limpar histórico</button>
+        </div>
         <div class="roll-log" id="masterFullLog" style="max-height:70vh"></div>
       </div>
     </div>

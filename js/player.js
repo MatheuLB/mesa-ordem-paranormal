@@ -108,7 +108,7 @@ async function showSelectScreen() {
     card.className = `${frameClass} char-card theme-${c.theme_color}`;
     card.innerHTML = `
       <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
-      <div class="portrait-slot">${portraitSvg(c.profile, { generated: c.is_generated, size: 40 })}</div>
+      <div class="portrait-slot">${renderAvatar(c, { size: 40 })}</div>
       ${c.claimed_by ? `<span class="claimed-badge">${escapeHtml(c.claimed_by)}</span>` : ''}
       ${c.is_generated ? `<div class="generated-tag">Agente gerado</div>` : ''}
       <div class="profile-tag">${c.profile} · Nível ${c.level}</div>
@@ -183,7 +183,7 @@ function renderSheet() {
   const frameClass = c.is_generated ? 'badge-frame' : 'ornate-frame';
   header.className = `${frameClass} sheet-header theme-${c.theme_color}`;
 
-  document.getElementById('portraitSlot').innerHTML = portraitSvg(c.profile, { generated: c.is_generated, size: 64 });
+  document.getElementById('portraitSlot').innerHTML = renderAvatar(c, { size: 64 });
 
   document.getElementById('chName').textContent = c.name;
   document.getElementById('chProfile').textContent = c.profile;

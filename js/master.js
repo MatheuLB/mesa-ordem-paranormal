@@ -63,6 +63,21 @@ function init() {
   document.getElementById('btnEndAdventure').addEventListener('click', () => setAdventureStatus('finalizada'));
   document.getElementById('btnExportDb').addEventListener('click', exportDatabase);
   document.getElementById('btnResetSession').addEventListener('click', resetSession);
+  document.getElementById('btnClearLog').addEventListener('click', clearLog);
+  document.getElementById('btnAddNpc').addEventListener('click', createNpc);
+  document.getElementById('btnPrevTurn').addEventListener('click', () => stepTurn(-1));
+  document.getElementById('btnNextTurn').addEventListener('click', () => stepTurn(1));
+  document.getElementById('btnEndCombat').addEventListener('click', endCombat);
+  loadNpcs();
+  subscribeNpcs();
+}
+
+async function clearLog() {
+  const ok = await uiConfirm('Limpar histórico?', 'Isso apaga todas as rolagens registradas na mesa. As fichas e o inventário dos agentes não são afetados.');
+  if (!ok) return;
+  await supa.from('roll_log').delete().gte('id', 0);
+  document.getElementById('masterFullLog').innerHTML = '';
+  uiToast('Histórico limpo.', 'success');
 }
 
 function switchTab(tab) {
@@ -100,6 +115,7 @@ function renderCharacters() {
     const fresh = charactersCache.find(c => c.slug === gmScreenOpenSlug);
     if (fresh) renderGmScreenContent(fresh);
   }
+  renderCombatTracker();
 }
 
 function updateNotifTargetOptions() {
@@ -117,7 +133,7 @@ function renderMasterCharRow(c) {
   div.innerHTML = `
     <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
     <div class="row" style="align-items:flex-start;gap:12px">
-      <div class="portrait-slot">${portraitSvg(c.profile, { generated: c.is_generated, size: 44 })}</div>
+      <div class="portrait-slot">${renderAvatar(c, { size: 44 })}</div>
       <div>
         ${c.is_generated ? `<div class="generated-tag">Agente gerado</div>` : ''}
         <h3>${c.name}</h3>
@@ -205,6 +221,21 @@ function closeGmScreen() {
   document.body.style.overflow = '';
 }
 
+async function uploadAvatar(c, file) {
+  if (!file) return;
+  if (file.size > 3 * 1024 * 1024) { uiToast('Imagem maior que 3MB — escolha um arquivo menor.', 'error'); return; }
+
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = `${c.slug}-${Date.now()}.${ext}`;
+
+  const { error: upErr } = await supa.storage.from('avatars').upload(path, file, { upsert: true });
+  if (upErr) { uiToast('Erro ao enviar imagem: ' + upErr.message, 'error'); return; }
+
+  const { data } = supa.storage.from('avatars').getPublicUrl(path);
+  await supa.from('characters').update({ avatar_url: data.publicUrl }).eq('slug', c.slug);
+  uiToast('Foto atualizada!', 'success');
+}
+
 function renderGmScreenContent(c) {
   const root = document.getElementById('gmScreenRoot');
   if (!root) return;
@@ -215,7 +246,15 @@ function renderGmScreenContent(c) {
       <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
       <div class="flex-between" style="margin-bottom:16px">
         <div class="row" style="gap:14px">
-          <div class="portrait-slot">${portraitSvg(c.profile, { generated: c.is_generated, size: 56 })}</div>
+          <div>
+            <div class="portrait-slot">${renderAvatar(c, { size: 56 })}</div>
+            <div class="row" style="margin-top:6px;gap:6px">
+              <label class="btn small" style="cursor:pointer;margin:0">
+                Trocar foto<input type="file" id="gmAvatarInput" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none">
+              </label>
+              ${c.avatar_url ? `<button class="btn small danger" id="gmAvatarRemove">Remover</button>` : ''}
+            </div>
+          </div>
           <div>
             <h1 style="font-size:28px">${escapeHtml(c.name)}</h1>
             <div class="sheet-tags"><span class="tag">${c.profile}</span><span class="tag">${escapeHtml(c.occupation)}</span><span class="tag level">Nível ${c.level}</span></div>
@@ -252,6 +291,11 @@ function renderGmScreenContent(c) {
   `;
 
   root.querySelector('#btnCloseGmScreen').addEventListener('click', closeGmScreen);
+
+  root.querySelector('#gmAvatarInput').addEventListener('change', e => uploadAvatar(c, e.target.files[0]));
+  root.querySelector('#gmAvatarRemove')?.addEventListener('click', async () => {
+    await supa.from('characters').update({ avatar_url: null }).eq('slug', c.slug);
+  });
 
   const invWrap = root.querySelector('#gmInvList');
   invWrap.innerHTML = inv.length === 0
@@ -291,6 +335,7 @@ async function loadSceneState() {
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'session_state' }, payload => {
       sceneState = payload.new;
       renderAdventureStatus(payload.new.status || 'aguardando');
+      renderCombatTracker();
     })
     .subscribe();
 }
@@ -488,6 +533,145 @@ async function createNewPoi() {
   if (!name) return;
   await supa.from('investigation_points').insert({ name, description_basic: '', description_contextual: '', clues: [], order_index: poisCache.length, revealed: false });
   loadPois();
+}
+
+// ---------------- Combate (NPCs/monstros + rastreador de iniciativa) ----------------
+
+let npcsCache = [];
+
+async function loadNpcs() {
+  const { data } = await supa.from('npcs').select('*').order('initiative', { ascending: false });
+  npcsCache = data || [];
+  renderCombatTracker();
+}
+
+function subscribeNpcs() {
+  supa.channel('master-npcs')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'npcs' }, () => loadNpcs())
+    .subscribe();
+}
+
+async function createNpc() {
+  const name = document.getElementById('npcName').value.trim();
+  if (!name) { uiToast('Dê um nome ao NPC/monstro.', 'error'); return; }
+  const pv = Math.max(1, Number(document.getElementById('npcPv').value) || 10);
+  const initiative = Number(document.getElementById('npcInit').value) || 0;
+  const notes = document.getElementById('npcNotes').value.trim();
+
+  await supa.from('npcs').insert({ name, pv_max: pv, pv_current: pv, initiative, notes, in_combat: true });
+
+  document.getElementById('npcName').value = '';
+  document.getElementById('npcPv').value = '10';
+  document.getElementById('npcInit').value = '0';
+  document.getElementById('npcNotes').value = '';
+}
+
+function renderCombatCharToggles() {
+  const wrap = document.getElementById('combatCharToggles');
+  if (!wrap) return;
+  wrap.innerHTML = charactersCache.map(c => `
+    <label class="tag" style="cursor:pointer;display:flex;align-items:center;gap:6px">
+      <input type="checkbox" data-slug="${c.slug}" ${c.in_combat ? 'checked' : ''}> ${escapeHtml(c.name)}
+    </label>
+  `).join('');
+  wrap.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      await supa.from('characters').update({ in_combat: cb.checked }).eq('slug', cb.dataset.slug);
+    });
+  });
+}
+
+function combatCombatants() {
+  const chars = charactersCache.filter(c => c.in_combat).map(c => ({
+    key: 'char:' + c.slug, kind: 'char', name: c.name, initiative: c.initiative,
+    pv_current: c.pv_current, pv_max: c.pv_max, notes: '', theme: c.theme_color, ref: c,
+  }));
+  const npcs = npcsCache.filter(n => n.in_combat).map(n => ({
+    key: 'npc:' + n.id, kind: 'npc', name: n.name, initiative: n.initiative,
+    pv_current: n.pv_current, pv_max: n.pv_max, notes: n.notes, theme: 'red', ref: n,
+  }));
+  return [...chars, ...npcs].sort((a, b) => b.initiative - a.initiative);
+}
+
+function renderCombatTracker() {
+  const wrap = document.getElementById('combatTracker');
+  if (!wrap) return;
+  renderCombatCharToggles();
+
+  const list = combatCombatants();
+  if (list.length === 0) {
+    wrap.innerHTML = `<div class="empty-state">Nenhum combatente na luta. Marque agentes acima ou adicione um NPC/monstro.</div>`;
+    return;
+  }
+
+  const currentKey = sceneState?.current_turn_key;
+  wrap.innerHTML = list.map(item => `
+    <div class="combat-row theme-${item.theme} ${item.key === currentKey ? 'current-turn' : ''}">
+      <input type="number" class="init-input" value="${item.initiative}" data-init-key="${item.key}" title="Iniciativa">
+      <div class="name-cell">
+        <div class="type-tag">${item.kind === 'char' ? 'Agente' : 'NPC/Monstro'}</div>
+        <h4>${escapeHtml(item.name)}</h4>
+      </div>
+      <div class="row">
+        <span class="resource-label">PV</span>
+        <div class="stepper">
+          <button class="btn-icon" data-pv-key="${item.key}" data-delta="-1">−</button>
+          <span class="val">${item.pv_current}/${item.pv_max}</span>
+          <button class="btn-icon" data-pv-key="${item.key}" data-delta="1">+</button>
+        </div>
+      </div>
+      <div class="notes-cell">${escapeHtml(item.notes)}</div>
+      ${item.kind === 'npc'
+        ? `<button class="btn-icon" data-del-npc="${item.ref.id}" title="Remover">✕</button>`
+        : `<button class="btn-icon" data-remove-char="${item.ref.slug}" title="Tirar da luta">✕</button>`}
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('input[data-init-key]').forEach(inp => {
+    inp.addEventListener('change', () => setInitiative(inp.dataset.initKey, Number(inp.value) || 0));
+  });
+  wrap.querySelectorAll('button[data-pv-key]').forEach(btn => {
+    btn.addEventListener('click', () => bumpCombatPv(btn.dataset.pvKey, Number(btn.dataset.delta)));
+  });
+  wrap.querySelectorAll('button[data-del-npc]').forEach(btn => {
+    btn.addEventListener('click', () => supa.from('npcs').delete().eq('id', btn.dataset.delNpc));
+  });
+  wrap.querySelectorAll('button[data-remove-char]').forEach(btn => {
+    btn.addEventListener('click', () => supa.from('characters').update({ in_combat: false }).eq('slug', btn.dataset.removeChar));
+  });
+}
+
+async function setInitiative(key, value) {
+  if (key.startsWith('char:')) await supa.from('characters').update({ initiative: value }).eq('slug', key.slice(5));
+  else await supa.from('npcs').update({ initiative: value }).eq('id', key.slice(4));
+}
+
+async function bumpCombatPv(key, delta) {
+  const item = combatCombatants().find(i => i.key === key);
+  if (!item) return;
+  const newVal = Math.max(0, Math.min(item.pv_max, item.pv_current + delta));
+  if (key.startsWith('char:')) await supa.from('characters').update({ pv_current: newVal }).eq('slug', item.ref.slug);
+  else await supa.from('npcs').update({ pv_current: newVal }).eq('id', item.ref.id);
+}
+
+async function stepTurn(delta) {
+  const list = combatCombatants();
+  if (list.length === 0) return;
+  const currentKey = sceneState?.current_turn_key;
+  let idx = list.findIndex(i => i.key === currentKey);
+  idx = idx === -1 ? 0 : (idx + delta + list.length) % list.length;
+  await supa.from('session_state').update({ current_turn_key: list[idx].key }).eq('id', 1);
+  if (delta > 0 && idx === 0) bumpRound(1);
+}
+
+async function endCombat() {
+  const ok = await uiConfirm('Encerrar combate?', 'Remove todos os NPCs/monstros da luta e tira os agentes do rastreador. As fichas continuam intactas.');
+  if (!ok) return;
+  await supa.from('npcs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  for (const c of charactersCache.filter(ch => ch.in_combat)) {
+    await supa.from('characters').update({ in_combat: false }).eq('slug', c.slug);
+  }
+  await supa.from('session_state').update({ current_turn_key: null }).eq('id', 1);
 }
 
 // ---------------- Rolagem livre (NPCs) ----------------
