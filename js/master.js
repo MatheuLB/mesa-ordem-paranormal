@@ -732,7 +732,9 @@ function renderInitiativeOrder() {
       <span class="type-tag">${item.kind === 'char' ? 'Agente' : 'NPC'}</span>
       <b style="flex:1">${escapeHtml(item.name)}</b>
       <span class="mono" style="font-size:12px;color:var(--text-dim)">PV ${item.pv_current}/${item.pv_max}</span>
-      <button class="btn-icon" data-roll-init="${item.key}" title="Rolar iniciativa">🎲</button>
+      ${item.kind === 'npc'
+        ? `<button class="btn-icon" data-roll-init="${item.key}" title="Rolar iniciativa">🎲</button>`
+        : `<span class="btn-icon" style="opacity:.3;cursor:default" title="Agentes rolam a própria iniciativa na ficha">🎲</span>`}
     </div>
   `).join('');
 
@@ -809,8 +811,30 @@ async function bumpCombatPv(key, delta) {
 async function rollAllInitiative() {
   const list = combatCombatants();
   if (list.length === 0) { uiToast('Nenhum combatente para rolar iniciativa.', 'error'); return; }
-  for (const item of list) await rollCombatInitiative(item);
-  uiToast('Iniciativa rolada para todos!', 'success');
+
+  const npcs = list.filter(i => i.kind === 'npc');
+  const players = list.filter(i => i.kind === 'char');
+
+  for (const item of npcs) await rollCombatInitiative(item);
+
+  if (players.length > 0) {
+    await supa.from('notifications').insert(
+      players.map(p => ({
+        target_slug: p.ref.slug,
+        text: '🎲 O mestre pediu para rolar iniciativa! Vá até a aba Iniciativa.',
+        action: 'roll_initiative',
+      }))
+    );
+  }
+
+  uiToast(
+    npcs.length > 0 && players.length > 0
+      ? 'NPCs rolados e jogadores avisados para rolar a própria iniciativa!'
+      : npcs.length > 0
+        ? 'Iniciativa dos NPCs rolada!'
+        : 'Jogadores avisados para rolar iniciativa!',
+    'success'
+  );
 }
 
 async function resetInitiativeOrder() {

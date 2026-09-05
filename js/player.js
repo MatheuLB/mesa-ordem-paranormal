@@ -727,6 +727,24 @@ async function removeInventoryItem(i) {
 
 // ---------------- Notificações privadas ----------------
 
+function showNotifBanner(n) {
+  const label = n.action ? n.text : (n.target_slug ? `[Privado] ${n.text}` : n.text);
+  document.getElementById('notifText').textContent = label;
+  const actionBtn = document.getElementById('notifAction');
+  if (n.action === 'roll_initiative') {
+    actionBtn.style.display = 'inline-block';
+    actionBtn.textContent = 'Rolar iniciativa';
+    actionBtn.onclick = () => {
+      switchTab('iniciativa');
+      document.getElementById('notifBanner').style.display = 'none';
+    };
+  } else {
+    actionBtn.style.display = 'none';
+    actionBtn.onclick = null;
+  }
+  document.getElementById('notifBanner').style.display = 'flex';
+}
+
 async function subscribeNotifications() {
   if (notifChannel) supa.removeChannel(notifChannel);
   const slug = currentChar.slug;
@@ -736,10 +754,7 @@ async function subscribeNotifications() {
       const n = payload.new;
       lastSeenNotifId = Math.max(lastSeenNotifId, n.id);
       localStorage.setItem('op2_last_notif_id', String(lastSeenNotifId));
-      if (n.target_slug === null || n.target_slug === slug) {
-        document.getElementById('notifText').textContent = n.target_slug ? `[Privado] ${n.text}` : n.text;
-        document.getElementById('notifBanner').style.display = 'flex';
-      }
+      if (n.target_slug === null || n.target_slug === slug) showNotifBanner(n);
     })
     .subscribe();
 
@@ -748,10 +763,7 @@ async function subscribeNotifications() {
     lastSeenNotifId = data[data.length - 1].id;
     localStorage.setItem('op2_last_notif_id', String(lastSeenNotifId));
     const relevant = [...data].reverse().find(n => n.target_slug === null || n.target_slug === slug);
-    if (relevant) {
-      document.getElementById('notifText').textContent = relevant.target_slug ? `[Privado] ${relevant.text}` : relevant.text;
-      document.getElementById('notifBanner').style.display = 'flex';
-    }
+    if (relevant) showNotifBanner(relevant);
   }
 }
 
