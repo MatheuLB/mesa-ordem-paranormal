@@ -30,8 +30,21 @@
   </div>
 
   <div id="mapContent" style="display:none;width:100%">
+    <div class="row" id="fogToolbar" style="display:none;margin-bottom:10px;justify-content:center">
+      <button class="btn small primary" id="fogModeReveal">🔆 Revelar</button>
+      <button class="btn small" id="fogModeHide">🌑 Esconder</button>
+      <label style="display:flex;align-items:center;gap:8px;margin:0;color:var(--text-dim);font-size:12px">
+        Tamanho da célula <input type="range" id="fogCellSize" min="24" max="140" value="56">
+      </label>
+      <button class="btn small" id="fogRevealAll">Revelar tudo</button>
+      <button class="btn small danger" id="fogHideAll">Esconder tudo</button>
+    </div>
+
     <div id="mapStage" class="map-stage">
       <img id="mapImage" src="" alt="Mapa da cena">
+      <div id="fogOverlayImg" class="fog-overlay-img"></div>
+      <canvas id="fogCanvas" class="fog-canvas"></canvas>
+      <canvas id="fogGridOverlay" class="fog-grid-overlay"></canvas>
     </div>
 
     <div id="mapTray" class="map-tray" style="display:none"></div>
