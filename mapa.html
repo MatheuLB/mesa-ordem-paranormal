@@ -14,7 +14,7 @@
     <div class="mark"><span>Ω</span></div>
     <div>
       <h1>Mapa da Cena</h1>
-      <div class="sub">Ordem Paranormal RPG II</div>
+      <div class="sub" id="mapModeLabel">Ordem Paranormal RPG II</div>
     </div>
   </div>
   <div class="nav-links">
@@ -28,11 +28,19 @@
     <div style="font-size:34px;margin-bottom:10px">🗺</div>
     O mestre ainda não ativou um mapa para esta cena.
   </div>
-  <img id="mapImage" src="" alt="Mapa da cena" style="display:none">
+
+  <div id="mapContent" style="display:none;width:100%">
+    <div id="mapStage" class="map-stage">
+      <img id="mapImage" src="" alt="Mapa da cena">
+    </div>
+
+    <div id="mapTray" class="map-tray" style="display:none"></div>
+  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/supabase-config.js"></script>
+<script src="js/portrait.js"></script>
 <script src="js/mapa.js"></script>
 </body>
 </html>

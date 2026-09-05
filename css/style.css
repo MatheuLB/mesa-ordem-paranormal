@@ -585,3 +585,37 @@ label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; colo
 
 .map-viewer-wrap { display: grid; place-items: center; min-height: calc(100vh - 70px); padding: 20px; }
 .map-viewer-wrap img { max-width: 100%; max-height: calc(100vh - 110px); border: 1px solid var(--border-soft); }
+
+.map-stage { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.map-stage img { max-width: 100%; max-height: calc(100vh - 110px); border: 1px solid var(--border-soft); display: block; }
+
+.map-token {
+  position: absolute; transform: translate(-50%, -50%);
+  width: 44px; height: 44px; border-radius: 50%;
+  border: 2px solid var(--accent); background: var(--bg-void);
+  display: grid; place-items: center; color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6); touch-action: none;
+  user-select: none;
+}
+.map-token.editable { cursor: grab; }
+.map-token.editable:active { cursor: grabbing; }
+.map-token .token-label {
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  margin-top: 3px; font-size: 10px; white-space: nowrap; color: var(--text-main);
+  background: rgba(0,0,0,0.7); padding: 1px 5px; pointer-events: none;
+}
+.map-token .token-remove {
+  position: absolute; top: -8px; right: -8px; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--danger); color: #fff; font-size: 11px;
+  display: none; place-items: center; cursor: pointer; line-height: 1;
+}
+.map-token.editable:hover .token-remove { display: grid; }
+
+.map-tray {
+  margin-top: 16px; padding: 12px; border: 1px dashed var(--border-soft);
+  display: flex; gap: 14px; flex-wrap: wrap; align-items: center; max-width: 100%;
+}
+.map-tray .tray-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-faint); width: 100%; }
+.map-tray-item { display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+.map-tray-item .map-token { position: static; transform: none; opacity: 0.7; }
+.map-tray-item span { font-size: 10px; color: var(--text-dim); max-width: 60px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

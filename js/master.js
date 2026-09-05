@@ -56,14 +56,14 @@ document.getElementById('masterPass').addEventListener('keydown', e => { if (e.k
 function tryUnlock() {
   const val = document.getElementById('masterPass').value;
   if (val === MASTER_PASSWORD) {
-    sessionStorage.setItem('op2_master_ok', '1');
+    localStorage.setItem('op2_master_ok', '1');
     boot();
   } else {
     document.getElementById('lockError').style.display = 'block';
   }
 }
 
-if (sessionStorage.getItem('op2_master_ok') === '1') boot();
+if (localStorage.getItem('op2_master_ok') === '1') boot();
 
 function boot() {
   document.getElementById('lockScreen').style.display = 'none';
