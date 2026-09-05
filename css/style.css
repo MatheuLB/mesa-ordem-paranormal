@@ -572,3 +572,16 @@ label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; colo
 .skill-ref-row .desc { color: var(--text-dim); line-height: 1.4; }
 .skills-ref-sub { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
 .skills-ref-sub h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--gold); margin-bottom: 8px; }
+
+/* ---------- Mapa ---------- */
+.map-row {
+  display: grid; grid-template-columns: 90px 1fr auto; gap: 14px; align-items: center;
+  padding: 10px; border: 1px solid var(--border-soft); margin-bottom: 8px; background: var(--bg-panel);
+}
+@media (max-width: 600px) { .map-row { grid-template-columns: 60px 1fr; } .map-row .map-actions { grid-column: 1 / -1; } }
+.map-row.is-active { border-color: var(--accent); background: var(--accent-dim); }
+.map-row img { width: 90px; height: 60px; object-fit: cover; border: 1px solid var(--border-soft); display: block; }
+.map-row .map-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.map-viewer-wrap { display: grid; place-items: center; min-height: calc(100vh - 70px); padding: 20px; }
+.map-viewer-wrap img { max-width: 100%; max-height: calc(100vh - 110px); border: 1px solid var(--border-soft); }

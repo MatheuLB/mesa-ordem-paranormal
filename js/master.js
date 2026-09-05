@@ -110,6 +110,11 @@ function init() {
   document.getElementById('roundPlus2').addEventListener('click', () => bumpRound(1));
   loadNpcs();
   subscribeNpcs();
+
+  document.getElementById('btnAddMap').addEventListener('click', uploadMap);
+  document.getElementById('mapVisibleToggle').addEventListener('change', e => setMapVisible(e.target.checked));
+  loadMaps();
+  subscribeMaps();
 }
 
 async function clearLog() {
@@ -372,12 +377,14 @@ async function loadSceneState() {
   document.getElementById('roundVal2').textContent = data.round_number || 0;
   document.getElementById('masterNotes').value = data.master_notes || '';
   renderAdventureStatus(data.status || 'aguardando');
+  renderMapTabState();
 
   supa.channel('master-session')
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'session_state' }, payload => {
       sceneState = payload.new;
       renderAdventureStatus(payload.new.status || 'aguardando');
       renderCombatTracker();
+      renderMapTabState();
     })
     .subscribe();
 }
@@ -859,6 +866,100 @@ async function endCombat() {
     await supa.from('characters').update({ in_combat: false }).eq('slug', c.slug);
   }
   await supa.from('session_state').update({ current_turn_key: null }).eq('id', 1);
+}
+
+// ---------------- Mapa ----------------
+
+let mapsCache = [];
+
+async function loadMaps() {
+  const { data } = await supa.from('maps').select('*').order('created_at', { ascending: false });
+  mapsCache = data || [];
+  renderMapsList();
+}
+
+function subscribeMaps() {
+  supa.channel('master-maps')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'maps' }, () => loadMaps())
+    .subscribe();
+}
+
+async function uploadMap() {
+  const name = document.getElementById('mapName').value.trim();
+  const file = document.getElementById('mapFile').files[0];
+  if (!name) { uiToast('Dê um nome ao mapa.', 'error'); return; }
+  if (!file) { uiToast('Escolha uma imagem.', 'error'); return; }
+  if (file.size > 10 * 1024 * 1024) { uiToast('Imagem maior que 10MB — escolha um arquivo menor.', 'error'); return; }
+
+  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error: upErr } = await supa.storage.from('maps').upload(path, file);
+  if (upErr) { uiToast('Erro ao enviar imagem: ' + upErr.message, 'error'); return; }
+
+  const { data } = supa.storage.from('maps').getPublicUrl(path);
+  const { error } = await supa.from('maps').insert({ name, image_url: data.publicUrl });
+  if (error) { uiToast('Erro ao salvar mapa: ' + error.message, 'error'); return; }
+
+  document.getElementById('mapName').value = '';
+  document.getElementById('mapFile').value = '';
+  uiToast('Mapa adicionado!', 'success');
+}
+
+function renderMapsList() {
+  const wrap = document.getElementById('mapsList');
+  if (mapsCache.length === 0) {
+    wrap.innerHTML = `<div class="empty-state">Nenhum mapa enviado ainda.</div>`;
+    return;
+  }
+  const activeId = sceneState?.active_map_id;
+  wrap.innerHTML = mapsCache.map(m => `
+    <div class="map-row ${m.id === activeId ? 'is-active' : ''}">
+      <img src="${m.image_url}" alt="">
+      <div>
+        <b>${escapeHtml(m.name)}</b>
+        ${m.id === activeId ? '<div class="tag level" style="display:inline-block;margin-top:4px">Ativo</div>' : ''}
+      </div>
+      <div class="map-actions">
+        <button class="btn small primary" data-activate-map="${m.id}" ${m.id === activeId ? 'disabled' : ''}>Ativar</button>
+        <button class="btn small danger" data-delete-map="${m.id}">Excluir</button>
+      </div>
+    </div>
+  `).join('');
+
+  wrap.querySelectorAll('button[data-activate-map]').forEach(btn => {
+    btn.addEventListener('click', () => activateMap(btn.dataset.activateMap));
+  });
+  wrap.querySelectorAll('button[data-delete-map]').forEach(btn => {
+    btn.addEventListener('click', () => deleteMap(btn.dataset.deleteMap));
+  });
+}
+
+async function activateMap(id) {
+  const { error } = await supa.from('session_state').update({ active_map_id: id }).eq('id', 1);
+  if (error) uiToast('Erro ao ativar mapa: ' + error.message, 'error');
+}
+
+async function deleteMap(id) {
+  const map = mapsCache.find(m => m.id === id);
+  const ok = await uiConfirm('Excluir mapa?', `"${map?.name}" será removido permanentemente.`);
+  if (!ok) return;
+  if (sceneState?.active_map_id === id) {
+    await supa.from('session_state').update({ active_map_id: null }).eq('id', 1);
+  }
+  const { error } = await supa.from('maps').delete().eq('id', id);
+  if (error) uiToast('Erro ao excluir mapa: ' + error.message, 'error');
+}
+
+async function setMapVisible(visible) {
+  const { error } = await supa.from('session_state').update({ map_visible: visible }).eq('id', 1);
+  if (error) uiToast('Erro ao atualizar visibilidade: ' + error.message, 'error');
+}
+
+function renderMapTabState() {
+  const active = mapsCache.find(m => m.id === sceneState?.active_map_id);
+  document.getElementById('activeMapLabel').textContent = active ? `Mapa ativo: ${active.name}` : 'Nenhum mapa ativo.';
+  document.getElementById('mapVisibleToggle').checked = !!sceneState?.map_visible;
+  renderMapsList();
 }
 
 // ---------------- Rolagem livre (NPCs) ----------------

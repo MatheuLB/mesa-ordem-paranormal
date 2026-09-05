@@ -41,6 +41,7 @@
       <button class="tab-btn" data-tab="cena">Cena</button>
       <button class="tab-btn" data-tab="investigacao">Investigação</button>
       <button class="tab-btn" data-tab="combate">Combate</button>
+      <button class="tab-btn" data-tab="mapa">Mapa</button>
       <button class="tab-btn" data-tab="dados">Dados &amp; Regras</button>
       <button class="tab-btn" data-tab="registro">Registro</button>
     </div>
@@ -147,6 +148,36 @@
         </div>
         <div style="margin-top:10px"><label>Habilidades / Notas</label><textarea id="npcNotes" rows="2" style="width:100%" placeholder="Ex: Ataque com Luta d10 | Especial: regenera 1d4 PV por rodada"></textarea></div>
         <button class="btn primary" id="btnAddNpc" style="margin-top:10px">+ Adicionar à luta</button>
+      </div>
+    </div>
+
+    <!-- MAPA -->
+    <div class="tab-panel" id="tab-mapa">
+      <div class="ornate-frame panel" style="margin-bottom:16px">
+        <div class="flex-between">
+          <h2 style="margin:0">Mapa da cena</h2>
+          <div class="row">
+            <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer">
+              <input type="checkbox" id="mapVisibleToggle"> Mostrar aos jogadores
+            </label>
+            <a class="btn small" href="mapa.html" target="_blank">Abrir página do mapa ↗</a>
+          </div>
+        </div>
+        <p style="color:var(--text-dim);font-size:12.5px;margin-top:8px" id="activeMapLabel">Nenhum mapa ativo.</p>
+      </div>
+
+      <div class="ornate-frame panel" style="margin-bottom:16px">
+        <h2>Enviar novo mapa</h2>
+        <div class="row" style="align-items:flex-end">
+          <div><label>Nome</label><input type="text" id="mapName" placeholder="Ex: Casarão abandonado"></div>
+          <div><label>Imagem</label><input type="file" id="mapFile" accept="image/png,image/jpeg,image/webp"></div>
+          <button class="btn primary small" id="btnAddMap">+ Adicionar mapa</button>
+        </div>
+      </div>
+
+      <div class="ornate-frame panel">
+        <h2>Mapas salvos</h2>
+        <div id="mapsList" class="stack"></div>
       </div>
     </div>
 

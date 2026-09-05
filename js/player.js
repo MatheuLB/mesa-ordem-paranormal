@@ -625,6 +625,7 @@ async function loadSessionState() {
 function applySessionState() {
   if (!sessionState) return;
   document.getElementById('dtInput').value = sessionState.scene_dt || 7;
+  document.getElementById('mapBanner').style.display = (sessionState.map_visible && sessionState.active_map_id) ? 'flex' : 'none';
 }
 
 function subscribeSession() {
